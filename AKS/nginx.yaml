@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: nginx-clms
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: brine-deployment-app
