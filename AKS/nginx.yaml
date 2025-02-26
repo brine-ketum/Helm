@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-clms
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: brine-deployment-app
+  template:
+    metadata:
+      labels:
+        app: brine-deployment-app
+    spec:
+      containers:
+        - name: nginx
+          image: nginx
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - mountPath: /var/log/nginx
+              name: volume1
+        - name: sidecar
+          image: brinesregistry.azurecr.io/cloudlens-sensor:6.10.0-98
+          args: ["--auto_update","y","--project_key","e01b4ed7ba2f45e6b822f0ba40c96e59","--accept_eula","yes","--server","172.210.78.63", "--ssl_verify","no","--custom_tags", "app=nginx","owner=brine"]
+          volumeMounts:
+            - mountPath: /var/log/cloudlens
+              name: volume1
+            - mountPath: /host
+              name: volume2
+            - mountPath: /lib/modules
+              name: volume3
+          securityContext:
+            allowPrivilegeEscalation: true
+            capabilities:
+              add: ["SYS_MODULE", "SYS_RESOURCE", "NET_RAW", "NET_ADMIN"]
+      volumes:
+        - name: volume1
+          hostPath:
+            path: /var/log
+            type: Directory
+        - name: volume2
+          hostPath:
+            path: /
+            type: Directory
+        - name: volume3
+          hostPath:
+            path: /lib/modules
+            type: Directory
