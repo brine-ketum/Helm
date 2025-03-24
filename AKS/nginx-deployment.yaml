@@ -1,99 +1,160 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  nginx.conf: |
+    events {}
+
+    http {
+      server {
+        listen 80;
+        server_name nginx.apps.emea-sa-openshift.bbn.is.keysight.com;
+
+        location / {
+          root /usr/share/nginx/html;
+          index index.html;
+        }
+      }
+
+      server {
+        listen 443 ssl;
+        server_name nginx.apps.emea-sa-openshift.bbn.is.keysight.com;
+
+        ssl_certificate /etc/nginx/ssl/tls.crt;
+        ssl_certificate_key /etc/nginx/ssl/tls.key;
+
+        location / {
+          root /usr/share/nginx/html;
+          index index.html;
+        }
+      }
+    }
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-index
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Welcome</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                text-align: center;
+                padding: 100px;
+                background-color: #f4f4f4;
+            }
+            h1 {
+                color: #007bff;
+                font-size: 72px;
+                font-weight: bold;
+                text-shadow: 3px 3px 5px rgba(0, 0, 0, 0.3);
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Welcome to Keysight K8s SSL Payload Tap</h1>
+    </body>
+    </html>
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nginx-cloudlens
+  name: nginx-deployment
+  labels:
+    app: nginx
 spec:
+  replicas: 2
   selector:
     matchLabels:
       app: nginx
-  replicas: 4
   template:
     metadata:
       labels:
         app: nginx
     spec:
       containers:
-      - name: nginx
-        image: nginx
-        ports:
-        - containerPort: 80
-        - containerPort: 443
-        volumeMounts:
-        - name: html-volume
-          mountPath: /usr/share/nginx/html
-        - name: nginx-config
-          mountPath: /etc/nginx/conf.d/default.conf
-          subPath: default.conf
-        - name: tls-secret
-          mountPath: /etc/nginx/ssl
-          readOnly: true
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 80
+            - containerPort: 443
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          volumeMounts:
+            - name: nginx-index
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+            - name: ssl-certs
+              mountPath: /etc/nginx/ssl
+              readOnly: true
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
       volumes:
-      - name: html-volume
-        configMap:
-          name: nginx-html-config
-      - name: nginx-config
-        configMap:
-          name: nginx-config
-      - name: tls-secret
-        secret:
-          secretName: nginx-tls-secret
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: nginx-html-config
-data:
-  index.html: |
-    <html>
-    <head>
-        <title>Welcome</title>
-        <style>
-            body {
-                display: flex;
-                flex-direction: column;
-                justify-content: flex-start; /* Align to the top */
-                align-items: center; /* Center horizontally */
-                height: 100vh;
-                margin: 0;
-                font-family: Arial, sans-serif;
-            }
-            h1 {
-                font-size: 48px;
-                font-weight: bold;
-                margin-top: 20px; /* Adjust spacing from the top */
-            }
-        </style>
-    </head>
-    <body>
-        <h1>Welcome to ExtraHop K8s Demo</h1>
-    </body>
-    </html>
-
+        - name: nginx-index
+          configMap:
+            name: nginx-index
+        - name: ssl-certs
+          secret:
+            secretName: nginx-cert
+        - name: nginx-config
+          configMap:
+            name: nginx-config
 
 ---
 apiVersion: v1
-kind: ConfigMap
+kind: Service
 metadata:
-  name: nginx-config
-data:
-  default.conf: |
-    server {
-        listen 80;
-        server_name _;
+  name: nginx-service
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+      name: http
+    - protocol: TCP
+      port: 443
+      targetPort: 443
+      name: https
+  type: ClusterIP
 
-        # Redirect HTTP to HTTPS
-        return 301 https://$host$request_uri;
-    }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: nginx-route
+spec:
+  host: nginx.apps.emea-sa-openshift.bbn.is.keysight.com
+  to:
+    kind: Service
+    name: nginx-service
+  port:
+    targetPort: http  # Now allows HTTP traffic through OpenShift
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Allow  # This allows both HTTP and HTTPS access
 
-    server {
-        listen 443 ssl;
-        server_name _;
 
-        ssl_certificate /etc/nginx/ssl/tls.crt;
-        ssl_certificate_key /etc/nginx/ssl/tls.key;
 
-        location / {
-            root /usr/share/nginx/html;
-            index index.html;
-        }
-    }
+# The TLS termination is set to reencrypt, which means:
+# The client (browser or curl) communicates with OpenShift over HTTPS.
+# OpenShift decrypts the request.
+# OpenShift re-encrypts the request.
+# The request is then forwarded securely (HTTPS) to Nginx inside the cluster.
+# The entire connection path is end-to-end encrypted.
