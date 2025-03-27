@@ -1,6 +1,6 @@
 #!/bin/bash
 apt update -y
-apt install -y nginx ca-certificates curl gnupg lsb-release
+apt install -y net-tools tcpdump nginx ca-certificates curl gnupg lsb-release
 
 # Set up Docker repository
 install -m 0755 -d /etc/apt/keyrings
