@@ -86,13 +86,13 @@ resource "azurerm_lb" "lb" {
   resource_group_name = azurerm_resource_group.rg.name
   sku                 = "Standard"
 
-frontend_ip_configuration {
-  name                 = "FrontEnd"
-  public_ip_address_id = azurerm_public_ip.lb_public_ip.id
+  frontend_ip_configuration {
+    name                                         = "FrontEnd"
+    public_ip_address_id                         = azurerm_public_ip.lb_public_ip.id
+    gateway_load_balancer_frontend_ip_configuration_id = data.azurerm_lb.gwlb.frontend_ip_configuration[0].id
+  }
 }
 
-
-}
 
 # Create backend pool
 resource "azurerm_lb_backend_address_pool" "backend_pool" {
@@ -101,6 +101,12 @@ resource "azurerm_lb_backend_address_pool" "backend_pool" {
 }
 
 #added
+
+resource "azurerm_subnet_route_table_association" "vpb_egress_subnet_route" {
+  subnet_id      = azurerm_subnet.tool_subnet.id  # or vpb_egress if you split it
+  route_table_id = azurerm_route_table.vpb_route_table.id
+}
+
 
 resource "azurerm_route_table" "web_route_table" {
   name                = "WebRouteTable"
@@ -142,10 +148,10 @@ resource "azurerm_route" "vpb_to_web_servers" {
   depends_on = [azurerm_route_table.vpb_route_table]
 }
 
-resource "azurerm_subnet_route_table_association" "consumer_subnet_route" {
-  subnet_id      = azurerm_subnet.consumer_subnet.id
-  route_table_id = azurerm_route_table.vpb_route_table.id
-}
+# resource "azurerm_subnet_route_table_association" "consumer_subnet_route" {
+#   subnet_id      = azurerm_subnet.consumer_subnet.id
+#   route_table_id = azurerm_route_table.vpb_route_table.id
+# }
 
 resource "azurerm_lb_rule" "lb_to_gwlb" {
   loadbalancer_id                = azurerm_lb.lb.id
@@ -287,7 +293,7 @@ resource "azurerm_network_interface_security_group_association" "nic_vm2_nsg" {
 
 # Create Web VMs
 resource "azurerm_linux_virtual_machine" "web_server1" {
-  name                = "WebServer1"
+  name                = "WebServerLB1"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   size                = "Standard_B1s"
@@ -315,7 +321,7 @@ resource "azurerm_linux_virtual_machine" "web_server1" {
 }
 
 resource "azurerm_linux_virtual_machine" "web_server2" {
-  name                = "WebServer2"
+  name                = "WebServerLB2"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   size                = "Standard_B1s"
@@ -488,14 +494,26 @@ resource "azurerm_network_security_rule" "http_web" {
 }
 
 
-resource "azurerm_route" "web_subnet_to_vpb" {
-  name                = "RouteToVPB"
-  resource_group_name = azurerm_resource_group.rg.name
-  route_table_name    = azurerm_route_table.web_route_table.name
+resource "azurerm_route" "default_to_vpb" {
+  name                   = "DefaultRouteToVPB"
+  resource_group_name    = azurerm_resource_group.rg.name
+  route_table_name       = azurerm_route_table.web_route_table.name
+  address_prefix         = "0.0.0.0/0"
+  next_hop_type          = "VirtualAppliance"
+  next_hop_in_ip_address = azurerm_network_interface.vpb_nic2.private_ip_address
+}
 
-  address_prefix        = "10.1.0.0/24"  # Consumer subnet where web servers reside
-  next_hop_type         = "VirtualAppliance"
-  next_hop_in_ip_address = "10.1.1.4"  # VPB's Private IP in Provider Subnet
+resource "azurerm_subnet_route_table_association" "web_subnet_route" {
+  subnet_id      = azurerm_subnet.consumer_subnet.id
+  route_table_id = azurerm_route_table.web_route_table.id
+}
+
+resource "azurerm_route" "vpb_to_internet" {
+  name                   = "VPBToInternet"
+  resource_group_name    = azurerm_resource_group.rg.name
+  route_table_name       = azurerm_route_table.vpb_route_table.name
+  address_prefix         = "0.0.0.0/0"
+  next_hop_type          = "Internet"
 }
 
 # Create health probe for Gateway Load Balancer
@@ -519,17 +537,17 @@ resource "azurerm_lb_rule" "gw_lb_rule" {
   probe_id                       = azurerm_lb_probe.gw_health_probe.id
 }
 
-resource "azurerm_route" "provider_subnet_to_gwlb" {
-  name                = "RouteToGatewayLB"
-  resource_group_name = azurerm_resource_group.rg.name
-  route_table_name    = azurerm_route_table.vpb_route_table.name # The VPB route table
+# resource "azurerm_route" "provider_subnet_to_gwlb" {
+#   name                = "RouteToGatewayLB"
+#   resource_group_name = azurerm_resource_group.rg.name
+#   route_table_name    = azurerm_route_table.vpb_route_table.name # The VPB route table
 
-  address_prefix      = "0.0.0.0/0"                             # Forward all traffic
-  next_hop_type       = "VirtualAppliance"
-  next_hop_in_ip_address = data.azurerm_lb.gwlb.frontend_ip_configuration[0].private_ip_address 
+#   address_prefix      = "0.0.0.0/0"                             # Forward all traffic
+#   next_hop_type       = "VirtualAppliance"
+#   next_hop_in_ip_address = data.azurerm_lb.gwlb.frontend_ip_configuration[0].private_ip_address 
 
-  depends_on = [azurerm_lb.gw_lb, azurerm_route_table.vpb_route_table, data.azurerm_lb.gwlb]
-}
+#   depends_on = [azurerm_lb.gw_lb, azurerm_route_table.vpb_route_table, data.azurerm_lb.gwlb]
+# }
 
 # Create Tool VM
 resource "azurerm_public_ip" "tool_vm_public_ip" {
@@ -696,13 +714,19 @@ resource "azurerm_network_interface" "vpb_nic2" {
   name                          = "vPBNic2"
   location                      = azurerm_resource_group.rg.location
   resource_group_name           = azurerm_resource_group.rg.name
+  # enable_ip_forwarding             = true
+  ip_forwarding_enabled = true
+  accelerated_networking_enabled   = true 
+
+  
  
   # enable_accelerated_networking = true  # Ensure accelerated networking is enabled
 
   ip_configuration {
     name                          = "ipconfig1"
     subnet_id                     = azurerm_subnet.provider_subnet.id
-    private_ip_address_allocation = "Dynamic"
+    private_ip_address_allocation = "Static"
+    private_ip_address            = "10.1.1.5"
   }
 }
 
@@ -710,6 +734,8 @@ resource "azurerm_network_interface" "vpb_nic3" {
   name                          = "vPBNic3"
   location                      = azurerm_resource_group.rg.location
   resource_group_name           = azurerm_resource_group.rg.name
+  ip_forwarding_enabled = true
+  accelerated_networking_enabled   = true
 
 
   ip_configuration {
@@ -740,7 +766,7 @@ resource "azurerm_network_interface_security_group_association" "vpb_nic3_nsg" {
 
 # Fix: Use Valid Ubuntu Image in VPB VM
 resource "azurerm_linux_virtual_machine" "vpb_vm" {
-  name                = "vPB"
+  name                = "vPB-GWLB"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   size                = "Standard_D8_v5"
