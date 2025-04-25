@@ -204,7 +204,6 @@ resource "azurerm_network_interface" "nic_vm1_source" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   accelerated_networking_enabled = true
-  ip_forwarding_enabled = true
   auxiliary_mode      = "MaxConnections"  # Choose the appropriate mode
   auxiliary_sku       = "A1"  
   ip_configuration {
@@ -223,10 +222,8 @@ resource "azurerm_network_interface" "nic_vm1_destination" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   accelerated_networking_enabled = true
-  ip_forwarding_enabled = true
   auxiliary_mode      = "MaxConnections"  # Choose the appropriate mode
   auxiliary_sku       = "A1"  
- 
   ip_configuration {
     name                          = "ipconfig-destination"
     subnet_id                     = azurerm_subnet.destination_subnet.id
@@ -349,8 +346,8 @@ resource "azurerm_network_security_rule" "nsg_allow_outbound_internet" {
 
 
 # Tool VM and Resources updated to Tool Subnet 172.16.23.0/24
-resource "azurerm_public_ip" "tool_vm_public_ip" {
-  name                = "ToolVM-PublicIP"
+resource "azurerm_public_ip" "suricata_public_ip" {
+  name                = "Suricata-PublicIP"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   allocation_method   = "Static"
@@ -358,25 +355,32 @@ resource "azurerm_public_ip" "tool_vm_public_ip" {
   zones               = ["1", "2", "3"]
 }
 
-resource "azurerm_network_interface" "tool_nic" {
-  name                = "ToolNic"
+resource "azurerm_network_interface" "suricata_nic" {
+  name                = "SuricataNic"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
+  ip_forwarding_enabled = true
 
   ip_configuration {
     name                          = "ipconfig1"
     subnet_id                     = azurerm_subnet.tool.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.tool_vm_public_ip.id
+    public_ip_address_id          = azurerm_public_ip.suricata_public_ip.id
   }
 }
 
-resource "azurerm_network_interface_security_group_association" "tool_vm_nsg" {
-  network_interface_id      = azurerm_network_interface.tool_nic.id
+resource "azurerm_network_interface_security_group_association" "suricata_nic_nsg" {
+  network_interface_id      = azurerm_network_interface.suricata_nic.id
   network_security_group_id = azurerm_network_security_group.nsg.id
 }
-resource "azurerm_linux_virtual_machine" "tool_vm" {
-  name                  = "ToolVM"
+
+# resource "azurerm_subnet_nat_gateway_association" "suricata_nat_assoc" {
+#   subnet_id      = azurerm_subnet.tool.id
+#   nat_gateway_id = azurerm_nat_gateway.nat_gateway.id
+# }
+
+resource "azurerm_linux_virtual_machine" "suricata" {
+  name                  = "Suricata"
   location              = azurerm_resource_group.rg.location
   resource_group_name   = azurerm_resource_group.rg.name
   size                  = "Standard_D4s_v3"
@@ -384,7 +388,7 @@ resource "azurerm_linux_virtual_machine" "tool_vm" {
   admin_password        = "Keysight123456"
   zone                  = "1"
   disable_password_authentication = false
-  network_interface_ids = [azurerm_network_interface.tool_nic.id]
+  network_interface_ids = [azurerm_network_interface.suricata_nic.id]
   os_disk {
     caching              = "ReadWrite"
     storage_account_type = "Standard_LRS"
@@ -618,14 +622,14 @@ output "load_balancer_ip" {
   value = azurerm_public_ip.lb_public_ip.ip_address
 }
 
-output "tool_vm_public_ip" {
-  value = azurerm_public_ip.tool_vm_public_ip.ip_address
+output "suricata_public_ip" {
+  value = azurerm_public_ip.suricata_public_ip.ip_address
 }
 
 output "ssh_instructions" {
   value = <<EOF
 SSH to WebServer1 source NIC: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60001 
-SSH to Tool VM:     ssh azureuser@${azurerm_public_ip.tool_vm_public_ip.ip_address}
+SSH to Suricata VM: ssh azureuser@${azurerm_public_ip.suricata_public_ip.ip_address}
 SSH to VPB: ssh vpb@${azurerm_public_ip.vpb_public_ip.ip_address}
 EOF
 }

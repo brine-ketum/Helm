@@ -1,3 +1,5 @@
+### Simplified Terraform Configuration: PLB, Web Servers, and Tool VM Only ###
+
 # Provider and Resource Group
 provider "azurerm" {
   features {}
@@ -15,70 +17,62 @@ terraform {
 }
 
 resource "azurerm_resource_group" "rg" {
-  name     = "Brine"
+  name     = "Keysight-AzureVTap-rg"
   location = "eastus2"
 }
 
-# Use the existing Azure Virtual Network "Cyperf-virtualnetwork"
-resource "azurerm_virtual_network" "vtap_vnet" {
-  name                = "Vtap-Vnet"
+# VNet and Subnets
+resource "azurerm_virtual_network" "vnet" {
+  name                = "VNet"
+  address_space       = ["10.1.0.0/16"]
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  address_space       = ["172.16.0.0/16"]
 }
 
-# Define source subnet 172.16.3.0/24 (source subnet)
-resource "azurerm_subnet" "source_subnet" {
-  name                 = "SourceSubnet"
-  resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vtap_vnet.name
-  address_prefixes     = ["172.16.3.0/24"]
-  # Associate with NAT Gateway later if needed (update below)
-}
-
-# Define destination subnet 172.16.4.0/24 (destination subnet for Suricata IDS)
-resource "azurerm_subnet" "destination_subnet" {
-  name                 = "DestinationSubnet"
-  resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vtap_vnet.name
-  address_prefixes     = ["172.16.4.0/24"]
-}
-
-# Other subnets updated to use address space 172.16.x.x per your setup
 resource "azurerm_subnet" "consumer_subnet" {
   name                 = "ConsumerBackendNet"
   resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vtap_vnet.name
-  address_prefixes     = ["172.16.10.0/24"]
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = ["10.1.0.0/24"]
 }
 
+#vPB subnets
 resource "azurerm_subnet" "vpb_mgmt" {
   name                 = "VPBManagement"
+  virtual_network_name = azurerm_virtual_network.vnet.name
   resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vtap_vnet.name
-  address_prefixes     = ["172.16.20.0/24"]
+  address_prefixes     = ["10.1.10.0/24"]
 }
 
 resource "azurerm_subnet" "vpb_ingress" {
   name                 = "VPBIngress"
+  virtual_network_name = azurerm_virtual_network.vnet.name
   resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vtap_vnet.name
-  address_prefixes     = ["172.16.21.0/24"]
+  address_prefixes     = ["10.1.11.0/24"]
 }
 
 resource "azurerm_subnet" "vpb_egress" {
   name                 = "VPBEgress"
+  virtual_network_name = azurerm_virtual_network.vnet.name
   resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vtap_vnet.name
-  address_prefixes     = ["172.16.22.0/24"]
+  address_prefixes     = ["10.1.12.0/24"]
 }
 
+
+#Tool Subnet
 resource "azurerm_subnet" "tool" {
   name                 = "Tool"
+  virtual_network_name = azurerm_virtual_network.vnet.name
   resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vtap_vnet.name
-  address_prefixes     = ["172.16.23.0/24"]
+  address_prefixes     = ["10.1.13.0/24"]
 }
+
+# resource "azurerm_subnet" "tool_subnet" {
+#   name                 = "CLToolNet"
+#   resource_group_name  = azurerm_resource_group.rg.name
+#   virtual_network_name = azurerm_virtual_network.vnet.name
+#   address_prefixes     = ["10.1.3.0/24"]
+# }
 
 # Public IP for Load Balancer
 resource "azurerm_public_ip" "lb_public_ip" {
@@ -90,6 +84,7 @@ resource "azurerm_public_ip" "lb_public_ip" {
   zones               = ["1", "2", "3"]
 }
 
+
 # Public IP for NAT Gateway
 resource "azurerm_public_ip" "nat_gateway_ip" {
   name                = "NATGatewayPublicIP"
@@ -100,7 +95,7 @@ resource "azurerm_public_ip" "nat_gateway_ip" {
   zones               = ["1", "2", "3"]
 }
 
-# NAT Gateway with Public IP
+# NAT Gateway (without public_ip_ids)
 resource "azurerm_nat_gateway" "nat_gateway" {
   name                = "NATGateway"
   location            = azurerm_resource_group.rg.location
@@ -108,14 +103,15 @@ resource "azurerm_nat_gateway" "nat_gateway" {
   sku_name            = "Standard"
 }
 
+# Associate the Public IP with the NAT Gateway
 resource "azurerm_nat_gateway_public_ip_association" "nat_gateway_ip_assoc" {
   nat_gateway_id       = azurerm_nat_gateway.nat_gateway.id
   public_ip_address_id = azurerm_public_ip.nat_gateway_ip.id
 }
 
-# Associate the NAT Gateway with the source subnet (adjust as needed)
-resource "azurerm_subnet_nat_gateway_association" "source_nat_assoc" {
-  subnet_id      = azurerm_subnet.source_subnet.id
+# Associate the NAT Gateway with the Web Server Subnet
+resource "azurerm_subnet_nat_gateway_association" "consumer_nat_assoc" {
+  subnet_id      = azurerm_subnet.consumer_subnet.id
   nat_gateway_id = azurerm_nat_gateway.nat_gateway.id
 }
 
@@ -193,103 +189,102 @@ resource "azurerm_network_security_rule" "nsg_rule_ssh" {
   network_security_group_name = azurerm_network_security_group.nsg.name
 }
 
+# Web Servers and NICs
+# Define your local template for cloud-init
 locals {
   cloud_init_webserver = templatefile("${path.module}/cloud_init_webserver.tpl", {})
 }
-# Web Server VM with Two NICs: source and destination subnets
 
-# NIC for Source Subnet 172.16.3.0/24
-resource "azurerm_network_interface" "nic_vm1_source" {
-  name                = "NicVM1-Source"
+resource "azurerm_network_interface" "nic_vm1" {
+  name                = "NicVM1"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   accelerated_networking_enabled = true
-  ip_forwarding_enabled = true
   auxiliary_mode      = "MaxConnections"  # Choose the appropriate mode
   auxiliary_sku       = "A1"  
   ip_configuration {
-    name                          = "ipconfig-source"
-    subnet_id                     = azurerm_subnet.source_subnet.id
+    name                          = "ipconfig1"
+    subnet_id                     = azurerm_subnet.consumer_subnet.id
     private_ip_address_allocation = "Dynamic"
   }
   tags = {
     fastpathenabled = "TRUE"
+
   }
 }
 
-# NIC for Destination Subnet 172.16.4.0/24
-resource "azurerm_network_interface" "nic_vm1_destination" {
-  name                = "NicVM1-Destination"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  accelerated_networking_enabled = true
-  ip_forwarding_enabled = true
-  auxiliary_mode      = "MaxConnections"  # Choose the appropriate mode
-  auxiliary_sku       = "A1"  
- 
-  ip_configuration {
-    name                          = "ipconfig-destination"
-    subnet_id                     = azurerm_subnet.destination_subnet.id
-    private_ip_address_allocation = "Dynamic"
-  }
-  tags = {
-    fastpathenabled = "TRUE"
-  }
-}
+# resource "azurerm_network_interface" "nic_vm2" {
+#   name                = "NicVM2"
+#   location            = azurerm_resource_group.rg.location
+#   resource_group_name = azurerm_resource_group.rg.name
+#   accelerated_networking_enabled = true
+#   auxiliary_mode      = "MaxConnections"  # Choose the appropriate mode
+#   auxiliary_sku       = "A1"           
+#   ip_configuration {
+#     name                          = "ipconfig1"
+#     subnet_id                     = azurerm_subnet.consumer_subnet.id
+#     private_ip_address_allocation = "Dynamic"
+#   }
+#   tags = {
+#     fastpathenabled = "TRUE"
+#   }
+# }
 
-# Associate NICs with NSG
-resource "azurerm_network_interface_security_group_association" "nic_vm1_source_nsg" {
-  network_interface_id      = azurerm_network_interface.nic_vm1_source.id
-  network_security_group_id = azurerm_network_security_group.nsg.id
-}
-
-resource "azurerm_network_interface_security_group_association" "nic_vm1_destination_nsg" {
-  network_interface_id      = azurerm_network_interface.nic_vm1_destination.id
-  network_security_group_id = azurerm_network_security_group.nsg.id
-}
-
-# WebServer1 VM with two NICs assigned
 resource "azurerm_linux_virtual_machine" "web_server1" {
   name                  = "WebServer1"
   location              = azurerm_resource_group.rg.location
   resource_group_name   = azurerm_resource_group.rg.name
-  size                  = "Standard_D4s_v3"
+  size                  = "Standard_D2s_v3"
   admin_username        = "azureuser"
   admin_password        = "Keysight123456"
   zone                  = "1"
   disable_password_authentication = false
-
-  # Attach source subnet NIC as primary, destination subnet NIC as secondary
-  network_interface_ids = [
-    azurerm_network_interface.nic_vm1_source.id,
-    azurerm_network_interface.nic_vm1_destination.id
-  ]
-
+  network_interface_ids = [azurerm_network_interface.nic_vm1.id]
   custom_data           = base64encode(local.cloud_init_webserver)
-
   os_disk {
     caching              = "ReadWrite"
     storage_account_type = "Standard_LRS"
   }
-
   source_image_reference {
     publisher = "Canonical"
     offer     = "0001-com-ubuntu-server-jammy"
     sku       = "22_04-lts"
     version   = "latest"
   }
-
-  tags = {
-    fastpathenabled = "TRUE"
+    tags = {
+      fastpathenabled = "TRUE"
   }
 }
 
+# resource "azurerm_linux_virtual_machine" "web_server2" {
+#   name                  = "WebServer2"
+#   location              = azurerm_resource_group.rg.location
+#   resource_group_name   = azurerm_resource_group.rg.name
+#   size                  = "Standard_D2s_v3"
+#   admin_username        = "azureuser"
+#   admin_password        = "Keysight123456"
+#   zone                  = "1"
+#   disable_password_authentication = false
+#   network_interface_ids = [azurerm_network_interface.nic_vm2.id]
+#   custom_data           = base64encode(local.cloud_init_webserver)
+#   os_disk {
+#     caching              = "ReadWrite"
+#     storage_account_type = "Standard_LRS"
+#   }
+#   source_image_reference {
+#     publisher = "Canonical"
+#     offer     = "0001-com-ubuntu-server-jammy"
+#     sku       = "22_04-lts"
+#     version   = "latest"
+#   }
+#     tags = {
+#       fastpathenabled = "TRUE"
+#   }
+# }
 
 # NAT Rules for SSH
-
-
-resource "azurerm_lb_nat_rule" "ssh_vm1_source" {
-  name                           = "SSHSrc"
+resource "azurerm_lb_nat_rule" "ssh_vm1" {
+  name                           = "SSHWebServer1"
   resource_group_name            = azurerm_resource_group.rg.name
   loadbalancer_id                = azurerm_lb.lb.id
   protocol                       = "Tcp"
@@ -298,57 +293,52 @@ resource "azurerm_lb_nat_rule" "ssh_vm1_source" {
   frontend_ip_configuration_name = "FrontEnd"
 }
 
-resource "azurerm_lb_nat_rule" "ssh_vm1_destination" {
-  name                           = "SSHDest"
-  resource_group_name            = azurerm_resource_group.rg.name
-  loadbalancer_id                = azurerm_lb.lb.id
-  protocol                       = "Tcp"
-  frontend_port                  = 60002
-  backend_port                   = 22
-  frontend_ip_configuration_name = "FrontEnd"
+# resource "azurerm_lb_nat_rule" "ssh_vm2" {
+#   name                           = "SSHWebServer2"
+#   resource_group_name            = azurerm_resource_group.rg.name
+#   loadbalancer_id                = azurerm_lb.lb.id
+#   protocol                       = "Tcp"
+#   frontend_port                  = 60002
+#   backend_port                   = 22
+#   frontend_ip_configuration_name = "FrontEnd"
+# }
+
+# Associate NICs to NSG and LB
+resource "azurerm_network_interface_security_group_association" "nic_vm1_nsg" {
+  network_interface_id      = azurerm_network_interface.nic_vm1.id
+  network_security_group_id = azurerm_network_security_group.nsg.id
 }
 
-resource "azurerm_network_interface_nat_rule_association" "nic_vm1_source_nat" {
-  network_interface_id  = azurerm_network_interface.nic_vm1_source.id
-  ip_configuration_name = "ipconfig-source"
-  nat_rule_id           = azurerm_lb_nat_rule.ssh_vm1_source.id
+# resource "azurerm_network_interface_security_group_association" "nic_vm2_nsg" {
+#   network_interface_id      = azurerm_network_interface.nic_vm2.id
+#   network_security_group_id = azurerm_network_security_group.nsg.id
+# }
+
+resource "azurerm_network_interface_nat_rule_association" "nic_vm1_nat" {
+  network_interface_id  = azurerm_network_interface.nic_vm1.id
+  ip_configuration_name = "ipconfig1"
+  nat_rule_id           = azurerm_lb_nat_rule.ssh_vm1.id
 }
 
-resource "azurerm_network_interface_nat_rule_association" "nic_vm1_destination_nat" {
-  network_interface_id  = azurerm_network_interface.nic_vm1_destination.id
-  ip_configuration_name = "ipconfig-destination"
-  nat_rule_id           = azurerm_lb_nat_rule.ssh_vm1_destination.id
-}
+# resource "azurerm_network_interface_nat_rule_association" "nic_vm2_nat" {
+#   network_interface_id  = azurerm_network_interface.nic_vm2.id
+#   ip_configuration_name = "ipconfig1"
+#   nat_rule_id           = azurerm_lb_nat_rule.ssh_vm2.id
+# }
 
-resource "azurerm_network_interface_backend_address_pool_association" "nic_vm1_lb_pool_source" {
-  network_interface_id    = azurerm_network_interface.nic_vm1_source.id
-  ip_configuration_name   = "ipconfig-source"
+resource "azurerm_network_interface_backend_address_pool_association" "nic_vm1_lb_pool" {
+  network_interface_id    = azurerm_network_interface.nic_vm1.id
+  ip_configuration_name   = "ipconfig1"
   backend_address_pool_id = azurerm_lb_backend_address_pool.backend_pool.id
 }
 
-resource "azurerm_network_interface_backend_address_pool_association" "nic_vm1_lb_pool_destination" {
-  network_interface_id    = azurerm_network_interface.nic_vm1_destination.id
-  ip_configuration_name   = "ipconfig-destination"
-  backend_address_pool_id = azurerm_lb_backend_address_pool.backend_pool.id
-}
+# resource "azurerm_network_interface_backend_address_pool_association" "nic_vm2_lb_pool" {
+#   network_interface_id    = azurerm_network_interface.nic_vm2.id
+#   ip_configuration_name   = "ipconfig1"
+#   backend_address_pool_id = azurerm_lb_backend_address_pool.backend_pool.id
+# }
 
-
-resource "azurerm_network_security_rule" "nsg_allow_outbound_internet" {
-  name                        = "AllowInternetOut"
-  priority                    = 310
-  direction                   = "Outbound"
-  access                      = "Allow"
-  protocol                    = "*"
-  source_port_range           = "*"
-  destination_port_range      = "*"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "Internet"
-  resource_group_name         = azurerm_resource_group.rg.name
-  network_security_group_name = azurerm_network_security_group.nsg.name
-}
-
-
-# Tool VM and Resources updated to Tool Subnet 172.16.23.0/24
+# Tool VM and Resources
 resource "azurerm_public_ip" "tool_vm_public_ip" {
   name                = "ToolVM-PublicIP"
   location            = azurerm_resource_group.rg.location
@@ -371,12 +361,14 @@ resource "azurerm_network_interface" "tool_nic" {
   }
 }
 
+
 resource "azurerm_network_interface_security_group_association" "tool_vm_nsg" {
   network_interface_id      = azurerm_network_interface.tool_nic.id
   network_security_group_id = azurerm_network_security_group.nsg.id
 }
+
 resource "azurerm_linux_virtual_machine" "tool_vm" {
-  name                  = "ToolVM"
+  name                  = "Suricata"
   location              = azurerm_resource_group.rg.location
   resource_group_name   = azurerm_resource_group.rg.name
   size                  = "Standard_D4s_v3"
@@ -395,15 +387,20 @@ resource "azurerm_linux_virtual_machine" "tool_vm" {
     sku       = "22_04-lts"
     version   = "latest"
   }
-}
+ }
 
-# VPB NSG and NICs updated address ranges to 172.16.x.x
+
+
+# vPB
+
+# NSG for VPB
 resource "azurerm_network_security_group" "vpb_nsg" {
-  name                = "VPB-NSG"
+  name                = "vPB-NSG"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 }
 
+# NSG Rules for VPB
 resource "azurerm_network_security_rule" "vpb_allow_all_in" {
   name                        = "AllowAllIn"
   priority                    = 100
@@ -460,8 +457,9 @@ resource "azurerm_network_security_rule" "vpb_allow_http" {
   network_security_group_name = azurerm_network_security_group.vpb_nsg.name
 }
 
+# Public IP for VPB
 resource "azurerm_public_ip" "vpb_public_ip" {
-  name                = "VPB-PublicIP"
+  name                = "vPB-PublicIP"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   allocation_method   = "Static"
@@ -469,8 +467,9 @@ resource "azurerm_public_ip" "vpb_public_ip" {
   zones               = ["1", "2", "3"]
 }
 
+# VPB NICs
 resource "azurerm_network_interface" "vpb_nic1" {
-  name                = "VPBNic1"
+  name                = "vPBNic1"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
@@ -483,11 +482,10 @@ resource "azurerm_network_interface" "vpb_nic1" {
 }
 
 resource "azurerm_network_interface" "vpb_nic2" {
-  name                           = "VPBIngress"
-  location                       = azurerm_resource_group.rg.location
-  resource_group_name            = azurerm_resource_group.rg.name
-  accelerated_networking_enabled = true
-  ip_forwarding_enabled = true
+  name                             = "vPB_Ingress"
+  location                         = azurerm_resource_group.rg.location
+  resource_group_name              = azurerm_resource_group.rg.name
+  accelerated_networking_enabled   = true
 
   ip_configuration {
     name                          = "ipconfig1"
@@ -497,11 +495,10 @@ resource "azurerm_network_interface" "vpb_nic2" {
 }
 
 resource "azurerm_network_interface" "vpb_nic3" {
-  name                           = "VPBEgress"
-  location                       = azurerm_resource_group.rg.location
-  resource_group_name            = azurerm_resource_group.rg.name
-  accelerated_networking_enabled = true
-  ip_forwarding_enabled = true
+  name                             = "vPB_Egress"
+  location                         = azurerm_resource_group.rg.location
+  resource_group_name              = azurerm_resource_group.rg.name
+  accelerated_networking_enabled   = true
 
   ip_configuration {
     name                          = "ipconfig1"
@@ -510,6 +507,8 @@ resource "azurerm_network_interface" "vpb_nic3" {
   }
 }
 
+
+# Associate NSG with VPB NICs
 resource "azurerm_network_interface_security_group_association" "vpb_nic1_nsg" {
   network_interface_id      = azurerm_network_interface.vpb_nic1.id
   network_security_group_id = azurerm_network_security_group.vpb_nsg.id
@@ -525,6 +524,7 @@ resource "azurerm_network_interface_security_group_association" "vpb_nic3_nsg" {
   network_security_group_id = azurerm_network_security_group.vpb_nsg.id
 }
 
+# VPB VM
 resource "azurerm_linux_virtual_machine" "vpb_vm" {
   name                  = "vPB"
   location              = azurerm_resource_group.rg.location
@@ -557,22 +557,16 @@ resource "azurerm_linux_virtual_machine" "vpb_vm" {
 
 # Script to install VPB
 resource "null_resource" "vpb_install" {
-  depends_on = [
-    azurerm_linux_virtual_machine.vpb_vm,
-    azurerm_network_interface_security_group_association.vpb_nic1_nsg,
-    azurerm_network_interface.vpb_nic1
-  ]
-
-  lifecycle {
-    create_before_destroy = true
-    ignore_changes        = [triggers]
-  }
+  depends_on = [azurerm_linux_virtual_machine.vpb_vm]
 
   triggers = {
-    script_checksum = filesha256("/Users/brinketu/Downloads/vpb-3.9.0-42-install-package.sh")
+    force_reapply = timestamp()
   }
 
-  # Upload the installer script
+  provisioner "local-exec" {
+    command = "sleep 120"
+  }
+
   provisioner "file" {
     source      = "/Users/brinketu/Downloads/vpb-3.9.0-42-install-package.sh"
     destination = "/home/vpb/vpb-installer.sh"
@@ -581,31 +575,25 @@ resource "null_resource" "vpb_install" {
       type     = "ssh"
       user     = "vpb"
       password = "Keysight!123456"
-      host     = azurerm_public_ip.vpb_public_ip.ip_address
       timeout  = "10m"
+      host     = azurerm_public_ip.vpb_public_ip.ip_address
     }
   }
 
-  # Run the installer if not already done
   provisioner "remote-exec" {
     inline = [
       "ls -l /home/vpb",
       "sleep 10",
-      "if [ ! -f /home/vpb/.vpb_installed ]; then",
-      "  chmod +x /home/vpb/vpb-installer.sh",
-      "  sudo bash /home/vpb/vpb-installer.sh",
-      "  touch /home/vpb/.vpb_installed",
-      "else",
-      "  echo 'VPB already installed. Skipping...'",
-      "fi"
+      "chmod +x /home/vpb/vpb-installer.sh",
+      "sudo bash /home/vpb/vpb-installer.sh"
     ]
 
     connection {
       type     = "ssh"
       user     = "vpb"
       password = "Keysight!123456"
-      host     = azurerm_public_ip.vpb_public_ip.ip_address
       timeout  = "45m"
+      host     = azurerm_public_ip.vpb_public_ip.ip_address
     }
   }
 }
@@ -614,6 +602,7 @@ output "vpb_public_ip" {
   value = azurerm_public_ip.vpb_public_ip.ip_address
 }
 
+# Outputs
 output "load_balancer_ip" {
   value = azurerm_public_ip.lb_public_ip.ip_address
 }
@@ -624,7 +613,8 @@ output "tool_vm_public_ip" {
 
 output "ssh_instructions" {
   value = <<EOF
-SSH to WebServer1 source NIC: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60001 
+SSH to WebServer1: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60001
+SSH to WebServer2: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60002
 SSH to Tool VM:     ssh azureuser@${azurerm_public_ip.tool_vm_public_ip.ip_address}
 SSH to VPB: ssh vpb@${azurerm_public_ip.vpb_public_ip.ip_address}
 EOF

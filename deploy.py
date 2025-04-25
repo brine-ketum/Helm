@@ -1,20 +1,21 @@
-# # List of boys in Class A
-# boys_in_class_a = ["Brine", "Favour", "Michael", "David", "John"]
+def reverse_words(sentence):
+    result = ""
+    word = "" 
+    for char in sentence:
+        if char != " ":
+            word += char
+        else:
+            result += word[::-1] + " "
+            word   = ""
 
-# # Print each name
-# print("Boys in Class A:")
-# for boy in boys_in_class_a:
-#     print(boy)
-import os
+    result += word[::-1]
+    return result
 
-# Get the current working directory
-current_dir = os.getcwd()
 
-# List all files and directories in current directory
-items = os.listdir(current_dir)
+input_sentence = "this is a test"
+output_sentence = reverse_words(input_sentence)
 
-# Print only files
-print("Files in current directory:")
-for item in items:
-    if os.path.isfile(os.path.join(current_dir, item)):
-        print(item)
+print(output_sentence)
+
+
+

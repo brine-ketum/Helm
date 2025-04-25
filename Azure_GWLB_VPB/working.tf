@@ -69,27 +69,19 @@ resource "azurerm_public_ip" "lb_public_ip" {
   zones               = ["1", "2", "3"]
 }
 
-# # Create separate Public IP for Gateway Load Balancer
-# resource "azurerm_public_ip" "gwlb_public_ip" {
-#   name                = "GWLB-PublicIP"
-#   location            = azurerm_resource_group.rg.location
-#   resource_group_name = azurerm_resource_group.rg.name
-#   allocation_method   = "Static"
-#   sku                 = "Standard"
-#   zones               = ["1", "2", "3"]
-# }
 
 # Standard Load Balancer (Fix: Use only one frontend IP)
 resource "azurerm_lb" "lb" {
-  name                = "LoadBalancer"
+  name                = "LoadBalancer-to-GWLB"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   sku                 = "Standard"
+  depends_on = [azurerm_lb.gw_lb]
 
   frontend_ip_configuration {
     name                                         = "FrontEnd"
     public_ip_address_id                         = azurerm_public_ip.lb_public_ip.id
-    gateway_load_balancer_frontend_ip_configuration_id = data.azurerm_lb.gwlb.frontend_ip_configuration[0].id
+    gateway_load_balancer_frontend_ip_configuration_id = azurerm_lb.gw_lb.frontend_ip_configuration[0].id
   }
 }
 
@@ -98,14 +90,35 @@ resource "azurerm_lb" "lb" {
 resource "azurerm_lb_backend_address_pool" "backend_pool" {
   loadbalancer_id = azurerm_lb.lb.id
   name            = "GWLBBackendPool"
+  depends_on = [azurerm_lb.gw_lb]
+
 }
 
 #added
 
-resource "azurerm_subnet_route_table_association" "vpb_egress_subnet_route" {
-  subnet_id      = azurerm_subnet.tool_subnet.id  # or vpb_egress if you split it
-  route_table_id = azurerm_route_table.vpb_route_table.id
+resource "azurerm_subnet_route_table_association" "tool_subnet_route" {
+  subnet_id      = azurerm_subnet.tool_subnet.id
+  route_table_id = azurerm_route_table.tool_route_table.id
+  depends_on = [azurerm_route_table.tool_route_table]
 }
+
+
+#Add
+resource "azurerm_route_table" "tool_route_table" {
+  name                = "ToolRouteTable"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+}
+
+
+resource "azurerm_route" "tool_to_internet" {
+  name                   = "ToolToInternet"
+  resource_group_name    = azurerm_resource_group.rg.name
+  route_table_name       = azurerm_route_table.tool_route_table.name
+  address_prefix         = "0.0.0.0/0"
+  next_hop_type          = "Internet"
+}
+
 
 
 resource "azurerm_route_table" "web_route_table" {
@@ -114,11 +127,6 @@ resource "azurerm_route_table" "web_route_table" {
   resource_group_name = azurerm_resource_group.rg.name
 }
 
-data "azurerm_lb" "gwlb" {
-  name                = azurerm_lb.gw_lb.name
-  resource_group_name = azurerm_resource_group.rg.name
-  depends_on          = [azurerm_lb.gw_lb]
-}
 
 # Create health probe
 resource "azurerm_lb_probe" "health_probe" {
@@ -128,13 +136,7 @@ resource "azurerm_lb_probe" "health_probe" {
   protocol        = "Tcp"
 }
 
-#added
-resource "azurerm_network_interface_backend_address_pool_association" "gwlb_pool_association" {
-  network_interface_id    = azurerm_network_interface.vpb_nic2.id  # VPB NIC
-  ip_configuration_name   = "ipconfig1"
-  backend_address_pool_id = azurerm_lb_backend_address_pool.backend_pool.id
 
-}
 
 resource "azurerm_route" "vpb_to_web_servers" {
   name                = "VPBToWebServers"
@@ -143,15 +145,15 @@ resource "azurerm_route" "vpb_to_web_servers" {
 
   address_prefix      = "10.1.0.0/24" # Consumer Subnet
   next_hop_type       = "VirtualAppliance"
-  next_hop_in_ip_address = azurerm_network_interface.vpb_nic2.private_ip_address
+  next_hop_in_ip_address = azurerm_network_interface.vpb_nic3.private_ip_address
 
   depends_on = [azurerm_route_table.vpb_route_table]
 }
 
-# resource "azurerm_subnet_route_table_association" "consumer_subnet_route" {
-#   subnet_id      = azurerm_subnet.consumer_subnet.id
-#   route_table_id = azurerm_route_table.vpb_route_table.id
-# }
+resource "azurerm_subnet_route_table_association" "consumer_subnet_route" {
+  subnet_id      = azurerm_subnet.consumer_subnet.id
+  route_table_id = azurerm_route_table.vpb_route_table.id
+}
 
 resource "azurerm_lb_rule" "lb_to_gwlb" {
   loadbalancer_id                = azurerm_lb.lb.id
@@ -162,6 +164,9 @@ resource "azurerm_lb_rule" "lb_to_gwlb" {
   frontend_ip_configuration_name = "FrontEnd"
   backend_address_pool_ids       = [azurerm_lb_backend_address_pool.backend_pool.id]
   probe_id                       = azurerm_lb_probe.health_probe.id
+  idle_timeout_in_minutes = 15
+  enable_tcp_reset = true
+  disable_outbound_snat          = true
 }
 
 # Create NSG
@@ -178,12 +183,49 @@ resource "azurerm_network_security_rule" "allow_vxlan" {
   access                      = "Allow"
   protocol                    = "Udp"
   source_port_range           = "*"
-  destination_port_ranges      = ["10801", "10802"]
+  destination_port_ranges      = ["10800", "10801"]
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
   resource_group_name         = azurerm_resource_group.rg.name
   network_security_group_name = azurerm_network_security_group.nsg.name
 }
+
+
+resource "azurerm_subnet_network_security_group_association" "consumer_subnet_nsg" {
+  subnet_id                 = azurerm_subnet.consumer_subnet.id
+  network_security_group_id = azurerm_network_security_group.nsg.id
+}
+
+
+resource "azurerm_network_security_rule" "allow_udp_4789_tool" {
+  name                        = "AllowUDP4789Tool"
+  priority                    = 203
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Udp"
+  source_port_range           = "*"
+  destination_port_range      = "4789"
+  source_address_prefix       = "*"
+  destination_address_prefix  = "*"
+  resource_group_name         = azurerm_resource_group.rg.name
+  network_security_group_name = azurerm_network_security_group.nsg.name
+}
+
+resource "azurerm_network_security_rule" "vpb_allow_udp_4789_out" {
+  name                        = "AllowUDP4789Out"
+  priority                    = 160
+  direction                   = "Outbound"
+  access                      = "Allow"
+  protocol                    = "Udp"
+  source_port_range           = "*"
+  destination_port_range      = "4789"
+  source_address_prefix       = "*"
+  destination_address_prefix  = azurerm_network_interface.tool_nic.private_ip_address
+  resource_group_name         = azurerm_resource_group.rg.name
+  network_security_group_name = azurerm_network_security_group.vpb_nsg.name
+}
+
+
 
 # Create NSG rule for HTTP
 resource "azurerm_network_security_rule" "nsg_rule_http" {
@@ -224,7 +266,6 @@ resource "azurerm_public_ip" "nat_gateway_ip" {
   sku                 = "Standard"
   zones               = ["1", "2", "3"]
 }
-
 # Create NAT Gateway
 resource "azurerm_nat_gateway" "nat_gateway" {
   name                    = "NATgateway"
@@ -280,14 +321,12 @@ resource "azurerm_network_interface" "nic_vm2" {
 resource "azurerm_network_interface_security_group_association" "nic_vm1_nsg" {
   network_interface_id      = azurerm_network_interface.nic_vm1.id
   network_security_group_id = azurerm_network_security_group.nsg.id
-
   depends_on = [azurerm_network_interface.nic_vm1]
 }
 
 resource "azurerm_network_interface_security_group_association" "nic_vm2_nsg" {
   network_interface_id      = azurerm_network_interface.nic_vm2.id
   network_security_group_id = azurerm_network_security_group.nsg.id
-
   depends_on = [azurerm_network_interface.nic_vm2]
 }
 
@@ -374,12 +413,16 @@ resource "azurerm_network_interface_nat_rule_association" "nic_vm1_nat" {
   network_interface_id  = azurerm_network_interface.nic_vm1.id
   ip_configuration_name = "ipconfig1"
   nat_rule_id           = azurerm_lb_nat_rule.ssh_vm1.id
+  depends_on = [azurerm_network_interface.nic_vm1]
+
 }
 
 resource "azurerm_network_interface_nat_rule_association" "nic_vm2_nat" {
   network_interface_id  = azurerm_network_interface.nic_vm2.id
   ip_configuration_name = "ipconfig1"
   nat_rule_id           = azurerm_lb_nat_rule.ssh_vm2.id
+  depends_on = [azurerm_network_interface.nic_vm2]
+
 }
 
 # Associate NICs with LB backend pool
@@ -399,6 +442,7 @@ resource "azurerm_network_interface_backend_address_pool_association" "nic_vm2_l
   depends_on = [azurerm_lb_backend_address_pool.backend_pool]
 }
 
+
 # Gateway Load Balancer (Fix: Use separate Public IP)
 resource "azurerm_lb" "gw_lb" {
   name                = "GWLoadBalancer"
@@ -413,20 +457,19 @@ resource "azurerm_lb" "gw_lb" {
   }
 }
 
-
-resource "azurerm_route" "vpb_to_gwlb" {
-  name                = "VPBToGWLB"
-  resource_group_name = azurerm_resource_group.rg.name
-  route_table_name    = azurerm_route_table.vpb_route_table.name
-  address_prefix      = azurerm_subnet.provider_subnet.address_prefixes[0]  # Route all traffic in provider subnet
-  next_hop_type       = "VirtualAppliance"
-  next_hop_in_ip_address = data.azurerm_lb.gwlb.frontend_ip_configuration[0].private_ip_address # Dynamically fetch GWLB IP
-
-  depends_on = [
-    azurerm_lb.gw_lb,   # Ensure GWLB is fully created before adding this route
-    azurerm_route_table.vpb_route_table  # Ensure route table exists before adding routes
-  ]
+resource "azurerm_route" "web_to_vpb" {
+  name                   = "WebToVPB"
+  resource_group_name    = azurerm_resource_group.rg.name
+  route_table_name       = azurerm_route_table.web_route_table.name
+  address_prefix         = "0.0.0.0/0"
+  next_hop_type          = "VirtualAppliance"
+  next_hop_in_ip_address = azurerm_network_interface.vpb_nic2.private_ip_address
 }
+resource "azurerm_subnet_route_table_association" "web_subnet_route" {
+  subnet_id      = azurerm_subnet.consumer_subnet.id
+  route_table_id = azurerm_route_table.web_route_table.id
+}
+
 
 # Backend Pool for Gateway Load Balancer 
 resource "azurerm_lb_backend_address_pool" "gw_backend_pool" {
@@ -434,19 +477,20 @@ resource "azurerm_lb_backend_address_pool" "gw_backend_pool" {
   name            = "BackendPool"
 
   tunnel_interface {
-    identifier = 901
+    identifier = 900
     type       = "External"
     protocol   = "VXLAN"
-    port       = 10801
+    port       = 10800
   }
 
   tunnel_interface {  
-    identifier = 902
+    identifier = 901
     type       = "Internal"
     protocol   = "VXLAN"
-    port       = 10802
+    port       = 10801
   }
 }
+
 
 # Allow inbound and Outbound VXLAN for vPB
 resource "azurerm_network_security_rule" "vpb_allow_vxlann" {
@@ -456,7 +500,7 @@ resource "azurerm_network_security_rule" "vpb_allow_vxlann" {
   access                      = "Allow"
   protocol                    = "Udp"
   source_port_range           = "*"
-  destination_port_ranges     = ["10801", "10802"]
+  destination_port_ranges     = ["10800", "10801"]
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
   resource_group_name         = azurerm_resource_group.rg.name
@@ -469,7 +513,7 @@ resource "azurerm_network_security_rule" "vpb_allow_vxlan" {
   access                      = "Allow"
   protocol                    = "Udp"
   source_port_range           = "*"
-  destination_port_ranges     = ["10801", "10802"]
+  destination_port_ranges     = ["10800", "10801"]
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
   resource_group_name         = azurerm_resource_group.rg.name
@@ -493,20 +537,6 @@ resource "azurerm_network_security_rule" "http_web" {
 
 }
 
-
-resource "azurerm_route" "default_to_vpb" {
-  name                   = "DefaultRouteToVPB"
-  resource_group_name    = azurerm_resource_group.rg.name
-  route_table_name       = azurerm_route_table.web_route_table.name
-  address_prefix         = "0.0.0.0/0"
-  next_hop_type          = "VirtualAppliance"
-  next_hop_in_ip_address = azurerm_network_interface.vpb_nic2.private_ip_address
-}
-
-resource "azurerm_subnet_route_table_association" "web_subnet_route" {
-  subnet_id      = azurerm_subnet.consumer_subnet.id
-  route_table_id = azurerm_route_table.web_route_table.id
-}
 
 resource "azurerm_route" "vpb_to_internet" {
   name                   = "VPBToInternet"
@@ -537,17 +567,6 @@ resource "azurerm_lb_rule" "gw_lb_rule" {
   probe_id                       = azurerm_lb_probe.gw_health_probe.id
 }
 
-# resource "azurerm_route" "provider_subnet_to_gwlb" {
-#   name                = "RouteToGatewayLB"
-#   resource_group_name = azurerm_resource_group.rg.name
-#   route_table_name    = azurerm_route_table.vpb_route_table.name # The VPB route table
-
-#   address_prefix      = "0.0.0.0/0"                             # Forward all traffic
-#   next_hop_type       = "VirtualAppliance"
-#   next_hop_in_ip_address = data.azurerm_lb.gwlb.frontend_ip_configuration[0].private_ip_address 
-
-#   depends_on = [azurerm_lb.gw_lb, azurerm_route_table.vpb_route_table, data.azurerm_lb.gwlb]
-# }
 
 # Create Tool VM
 resource "azurerm_public_ip" "tool_vm_public_ip" {
@@ -594,7 +613,7 @@ resource "azurerm_network_security_rule" "tool_vm_outbound" {
 }
 
 resource "azurerm_linux_virtual_machine" "tool_vm" {
-  name                = "ToolVM"
+  name                = "ToolGWLBVM"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   size                = "Standard_B1s"
@@ -684,7 +703,10 @@ resource "azurerm_route" "vxlan_route" {
 resource "azurerm_subnet_route_table_association" "provider_subnet_route" {
   subnet_id      = azurerm_subnet.provider_subnet.id
   route_table_id = azurerm_route_table.vpb_route_table.id
+
+  depends_on = [azurerm_linux_virtual_machine.vpb_vm]
 }
+
 
 # Create public IP for VPB
 resource "azurerm_public_ip" "vpb_public_ip" {
@@ -701,6 +723,8 @@ resource "azurerm_network_interface" "vpb_nic1" {
   name                = "vPBNic1"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
+  accelerated_networking_enabled = false
+
 
   ip_configuration {
     name                          = "ipconfig1"
@@ -711,10 +735,9 @@ resource "azurerm_network_interface" "vpb_nic1" {
 }
 
 resource "azurerm_network_interface" "vpb_nic2" {
-  name                          = "vPBNic2"
+  name                          = "vPB_Ingress"
   location                      = azurerm_resource_group.rg.location
   resource_group_name           = azurerm_resource_group.rg.name
-  # enable_ip_forwarding             = true
   ip_forwarding_enabled = true
   accelerated_networking_enabled   = true 
 
@@ -731,7 +754,7 @@ resource "azurerm_network_interface" "vpb_nic2" {
 }
 
 resource "azurerm_network_interface" "vpb_nic3" {
-  name                          = "vPBNic3"
+  name                          = "vPBN_Egress"
   location                      = azurerm_resource_group.rg.location
   resource_group_name           = azurerm_resource_group.rg.name
   ip_forwarding_enabled = true
@@ -749,19 +772,19 @@ resource "azurerm_network_interface" "vpb_nic3" {
 resource "azurerm_network_interface_security_group_association" "vpb_nic1_nsg" {
   network_interface_id      = azurerm_network_interface.vpb_nic1.id
   network_security_group_id = azurerm_network_security_group.vpb_nsg.id
-  depends_on = [azurerm_network_interface.vpb_nic1, azurerm_network_security_group.vpb_nsg]
+  depends_on = [azurerm_network_interface.vpb_nic1, azurerm_network_security_group.vpb_nsg, zurerm_linux_virtual_machine.vpb_vm]
 }
 
 resource "azurerm_network_interface_security_group_association" "vpb_nic2_nsg" {
   network_interface_id      = azurerm_network_interface.vpb_nic2.id
   network_security_group_id = azurerm_network_security_group.vpb_nsg.id
-  depends_on = [azurerm_network_interface.vpb_nic2, azurerm_network_security_group.vpb_nsg]
+  depends_on = [azurerm_network_interface.vpb_nic2, azurerm_network_security_group.vpb_nsg, azurerm_linux_virtual_machine.vpb_vm]
 }
 
 resource "azurerm_network_interface_security_group_association" "vpb_nic3_nsg" {
   network_interface_id      = azurerm_network_interface.vpb_nic3.id
   network_security_group_id = azurerm_network_security_group.vpb_nsg.id
-  depends_on = [azurerm_network_interface.vpb_nic3, azurerm_network_security_group.vpb_nsg]
+  depends_on = [azurerm_network_interface.vpb_nic3, azurerm_network_security_group.vpb_nsg, azurerm_linux_virtual_machine.vpb_vm]
 }
 
 # Fix: Use Valid Ubuntu Image in VPB VM
@@ -873,7 +896,8 @@ output "vpb_public_ip" {
   value = azurerm_public_ip.vpb_public_ip.ip_address
 }
 output "gwlb_ip" {
-  value = data.azurerm_lb.gwlb.frontend_ip_configuration[0].private_ip_address
+  value = azurerm_lb.gw_lb.frontend_ip_configuration[0].private_ip_address
+
 }
 
 output "ssh_instructions" {
@@ -890,12 +914,12 @@ SSH to vPB VM: ssh vpb@${azurerm_public_ip.vpb_public_ip.ip_address}
 # Tool VMs:
 SSH to Tool VM: ssh azureuser@${azurerm_public_ip.tool_vm_public_ip.ip_address}
 
-# Gateway Load Balancer (GWLB) (Private Access Only):
-GWLB Private IP: ${data.azurerm_lb.gwlb.frontend_ip_configuration[0].private_ip_address}
 EOF
 }
 
+output "gwlb_private_ip" {
+  value = azurerm_lb.gw_lb.frontend_ip_configuration[0].private_ip_address
+}
 
-#ALway Rem to tun on accelrated networking and backend pool admin state to up fro gwlb and vpb
-# Enable ip forwarding for Nic 2 and 3
 
+#Set Admin state of Loadbalancer Backend Pools to Up on the Console. TBD on Code as well
