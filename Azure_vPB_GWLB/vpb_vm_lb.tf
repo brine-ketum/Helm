@@ -118,7 +118,6 @@ resource "azurerm_subnet_nat_gateway_association" "source_nat_assoc" {
   subnet_id      = azurerm_subnet.source_subnet.id
   nat_gateway_id = azurerm_nat_gateway.nat_gateway.id
 }
-
 # Standard Load Balancer
 resource "azurerm_lb" "lb" {
   name                = "LoadBalancer"
@@ -192,7 +191,6 @@ resource "azurerm_network_security_rule" "nsg_rule_ssh" {
   resource_group_name         = azurerm_resource_group.rg.name
   network_security_group_name = azurerm_network_security_group.nsg.name
 }
-
 locals {
   cloud_init_webserver = templatefile("${path.module}/cloud_init_webserver.tpl", {})
 }
@@ -205,15 +203,16 @@ resource "azurerm_network_interface" "nic_vm1_source" {
   resource_group_name = azurerm_resource_group.rg.name
   accelerated_networking_enabled = true
   ip_forwarding_enabled = true
-  auxiliary_mode      = "MaxConnections"  # Choose the appropriate mode
-  auxiliary_sku       = "A1"  
+  # auxiliary_mode      = "MaxConnections"  # Choose the appropriate mode
+  auxiliary_mode      = "AcceleratedConnections"
+  auxiliary_sku       = "A2"  
   ip_configuration {
     name                          = "ipconfig-source"
     subnet_id                     = azurerm_subnet.source_subnet.id
     private_ip_address_allocation = "Dynamic"
   }
   tags = {
-    fastpathenabled = "TRUE"
+    fastpathenabled = "TRUE" #Not required for public preview
   }
 }
 
@@ -224,8 +223,9 @@ resource "azurerm_network_interface" "nic_vm1_destination" {
   resource_group_name = azurerm_resource_group.rg.name
   accelerated_networking_enabled = true
   ip_forwarding_enabled = true
-  auxiliary_mode      = "MaxConnections"  # Choose the appropriate mode
-  auxiliary_sku       = "A1"  
+  # auxiliary_mode      = "MaxConnections"  # Choose the appropriate mode 
+  auxiliary_mode      = "AcceleratedConnections"
+  auxiliary_sku       = "A2"  
  
   ip_configuration {
     name                          = "ipconfig-destination"
@@ -370,7 +370,6 @@ resource "azurerm_network_interface" "tool_nic" {
     public_ip_address_id          = azurerm_public_ip.tool_vm_public_ip.id
   }
 }
-
 resource "azurerm_network_interface_security_group_association" "tool_vm_nsg" {
   network_interface_id      = azurerm_network_interface.tool_nic.id
   network_security_group_id = azurerm_network_security_group.nsg.id
@@ -395,6 +394,81 @@ resource "azurerm_linux_virtual_machine" "tool_vm" {
     sku       = "22_04-lts"
     version   = "latest"
   }
+}
+
+#Suricata2
+
+# Public IP for Suricata2 VM
+resource "azurerm_public_ip" "suricata2_public_ip" {
+  name                = "Suricata2-PublicIP"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  zones               = ["1", "2", "3"]
+}
+
+# NIC for Suricata2 VM
+resource "azurerm_network_interface" "suricata2_nic" {
+  name                = "Suricata2Nic"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  ip_configuration {
+    name                          = "ipconfig1"
+    subnet_id                     = azurerm_subnet.tool.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.suricata2_public_ip.id
+  }
+}
+
+# Attach NIC to NSG
+resource "azurerm_network_interface_security_group_association" "suricata2_nsg" {
+  network_interface_id      = azurerm_network_interface.suricata2_nic.id
+  network_security_group_id = azurerm_network_security_group.nsg.id
+}
+
+# Suricata2 Linux Virtual Machine
+resource "azurerm_linux_virtual_machine" "suricata2_vm" {
+  name                  = "Suricata2"
+  location              = azurerm_resource_group.rg.location
+  resource_group_name   = azurerm_resource_group.rg.name
+  size                  = "Standard_D4s_v3"
+  admin_username        = "azureuser"
+  admin_password        = "Keysight123456"
+  zone                  = "1"
+  disable_password_authentication = false
+
+  network_interface_ids = [azurerm_network_interface.suricata2_nic.id]
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts"
+    version   = "latest"
+  }
+}
+
+# NAT Rule for Suricata2 SSH Access through Load Balancer
+resource "azurerm_lb_nat_rule" "ssh_suricata2" {
+  name                           = "SSHSuri2"
+  resource_group_name            = azurerm_resource_group.rg.name
+  loadbalancer_id                = azurerm_lb.lb.id
+  protocol                       = "Tcp"
+  frontend_port                  = 60003   # Pick an unused port, 60003 is clean after 60001/60002
+  backend_port                   = 22
+  frontend_ip_configuration_name = "FrontEnd"
+}
+
+resource "azurerm_network_interface_nat_rule_association" "suricata2_nat" {
+  network_interface_id  = azurerm_network_interface.suricata2_nic.id
+  ip_configuration_name = "ipconfig1"
+  nat_rule_id           = azurerm_lb_nat_rule.ssh_suricata2.id
 }
 
 # VPB NSG and NICs updated address ranges to 172.16.x.x
@@ -624,6 +698,7 @@ output "tool_vm_public_ip" {
 
 output "ssh_instructions" {
   value = <<EOF
+SSH to Suricata2 via Load Balancer: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60003
 SSH to WebServer1 source NIC: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60001 
 SSH to Tool VM:     ssh azureuser@${azurerm_public_ip.tool_vm_public_ip.ip_address}
 SSH to VPB: ssh vpb@${azurerm_public_ip.vpb_public_ip.ip_address}
