@@ -560,8 +560,9 @@ resource "azurerm_linux_virtual_machine" "rhel_vm" {
     sudo yum install -y httpd
     sudo systemctl start httpd
     sudo systemctl enable httpd
-    sudo yum install -y nginx
-    sudo systemctl enable nginx
+    sudo firewall-cmd --permanent --add-service=http
+    sudo firewall-cmd --reload
+
   EOF
   )
 
