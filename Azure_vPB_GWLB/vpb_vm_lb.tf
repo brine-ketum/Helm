@@ -333,6 +333,20 @@ resource "azurerm_network_interface_backend_address_pool_association" "nic_vm1_l
 }
 
 
+resource "azurerm_network_security_rule" "nsg_rule_tcp_3000" {
+  name                        = "AllowTCP3000"
+  priority                    = 202
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "3000"
+  source_address_prefix       = "*"
+  destination_address_prefix  = "*"
+  resource_group_name         = azurerm_resource_group.rg.name
+  network_security_group_name = azurerm_network_security_group.nsg.name
+}
+
 resource "azurerm_network_security_rule" "nsg_allow_outbound_internet" {
   name                        = "AllowInternetOut"
   priority                    = 310
@@ -349,33 +363,32 @@ resource "azurerm_network_security_rule" "nsg_allow_outbound_internet" {
 
 
 # Tool VM and Resources updated to Tool Subnet 172.16.23.0/24
-resource "azurerm_public_ip" "tool_vm_public_ip" {
-  name                = "ToolVM-PublicIP"
+resource "azurerm_public_ip" "ntop_tool1_public_ip" {
+  name                = "ntop_tool1-PublicIP"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   allocation_method   = "Static"
   sku                 = "Standard"
   zones               = ["1", "2", "3"]
 }
-
-resource "azurerm_network_interface" "tool_nic" {
-  name                = "ToolNic"
+resource "azurerm_network_interface" "ntop_tool1_nic" {
+  name                = "ntop_tool1Nic"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-
   ip_configuration {
     name                          = "ipconfig1"
     subnet_id                     = azurerm_subnet.tool.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.tool_vm_public_ip.id
+    public_ip_address_id          = azurerm_public_ip.ntop_tool1_public_ip.id
   }
 }
-resource "azurerm_network_interface_security_group_association" "tool_vm_nsg" {
-  network_interface_id      = azurerm_network_interface.tool_nic.id
+resource "azurerm_network_interface_security_group_association" "ntop_tool1_nsg" {
+  network_interface_id      = azurerm_network_interface.ntop_tool1_nic.id
   network_security_group_id = azurerm_network_security_group.nsg.id
 }
-resource "azurerm_linux_virtual_machine" "tool_vm" {
-  name                  = "ToolVM"
+resource "azurerm_linux_virtual_machine" "ntop_tool1_vm" {
+  name                  = "ntop_tool1"
+  computer_name         = "ntoptool1"
   location              = azurerm_resource_group.rg.location
   resource_group_name   = azurerm_resource_group.rg.name
   size                  = "Standard_D4s_v3"
@@ -383,7 +396,7 @@ resource "azurerm_linux_virtual_machine" "tool_vm" {
   admin_password        = "Keysight123456"
   zone                  = "1"
   disable_password_authentication = false
-  network_interface_ids = [azurerm_network_interface.tool_nic.id]
+  network_interface_ids = [azurerm_network_interface.ntop_tool1_nic.id]
   os_disk {
     caching              = "ReadWrite"
     storage_account_type = "Standard_LRS"
@@ -396,79 +409,91 @@ resource "azurerm_linux_virtual_machine" "tool_vm" {
   }
 }
 
-#Suricata2
-
-# Public IP for Suricata2 VM
-resource "azurerm_public_ip" "suricata2_public_ip" {
-  name                = "Suricata2-PublicIP"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-  zones               = ["1", "2", "3"]
-}
-
-# NIC for Suricata2 VM
-resource "azurerm_network_interface" "suricata2_nic" {
-  name                = "Suricata2Nic"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-
-  ip_configuration {
-    name                          = "ipconfig1"
-    subnet_id                     = azurerm_subnet.tool.id
-    private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.suricata2_public_ip.id
-  }
-}
-
-# Attach NIC to NSG
-resource "azurerm_network_interface_security_group_association" "suricata2_nsg" {
-  network_interface_id      = azurerm_network_interface.suricata2_nic.id
-  network_security_group_id = azurerm_network_security_group.nsg.id
-}
-
-# Suricata2 Linux Virtual Machine
-resource "azurerm_linux_virtual_machine" "suricata2_vm" {
-  name                  = "Suricata2"
-  location              = azurerm_resource_group.rg.location
-  resource_group_name   = azurerm_resource_group.rg.name
-  size                  = "Standard_D4s_v3"
-  admin_username        = "azureuser"
-  admin_password        = "Keysight123456"
-  zone                  = "1"
-  disable_password_authentication = false
-
-  network_interface_ids = [azurerm_network_interface.suricata2_nic.id]
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
-
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts"
-    version   = "latest"
-  }
-}
-
-# NAT Rule for Suricata2 SSH Access through Load Balancer
-resource "azurerm_lb_nat_rule" "ssh_suricata2" {
-  name                           = "SSHSuri2"
+resource "azurerm_lb_nat_rule" "ssh_ntop_tool1" {
+  name                           = "SSHntopTool1"
   resource_group_name            = azurerm_resource_group.rg.name
   loadbalancer_id                = azurerm_lb.lb.id
   protocol                       = "Tcp"
-  frontend_port                  = 60003   # Pick an unused port, 60003 is clean after 60001/60002
+  frontend_port                  = 60004
   backend_port                   = 22
   frontend_ip_configuration_name = "FrontEnd"
 }
 
-resource "azurerm_network_interface_nat_rule_association" "suricata2_nat" {
-  network_interface_id  = azurerm_network_interface.suricata2_nic.id
+resource "azurerm_network_interface_nat_rule_association" "ntop_tool1_nat" {
+  network_interface_id  = azurerm_network_interface.ntop_tool1_nic.id
   ip_configuration_name = "ipconfig1"
-  nat_rule_id           = azurerm_lb_nat_rule.ssh_suricata2.id
+  nat_rule_id           = azurerm_lb_nat_rule.ssh_ntop_tool1.id
+}
+#Ntop2
+
+# Public IP for Suricata2 VM
+resource "azurerm_public_ip" "ntop_tool2_public_ip" {
+  name                = "ntop_tool2-PublicIP"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  zones               = ["1", "2", "3"]
+}
+
+# NIC for ntop2 VM
+resource "azurerm_network_interface" "ntop_tool2_nic" {
+  name                = "ntop_tool2Nic"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  ip_configuration {
+    name                          = "ipconfig1"
+    subnet_id                     = azurerm_subnet.tool.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.ntop_tool2_public_ip.id
+  }
+}
+
+# Attach NIC to NSG
+resource "azurerm_network_interface_security_group_association" "ntop_tool2_nsg" {
+  network_interface_id      = azurerm_network_interface.ntop_tool2_nic.id
+  network_security_group_id = azurerm_network_security_group.nsg.id
+}
+
+# Suricata2 Linux Virtual Machine
+resource "azurerm_linux_virtual_machine" "ntop_tool2_vm" {
+  name                  = "ntop_tool2"
+  computer_name         = "ntoptool2"
+  location              = azurerm_resource_group.rg.location
+  resource_group_name   = azurerm_resource_group.rg.name
+  size                  = "Standard_D4s_v3"
+  admin_username        = "azureuser"
+  admin_password        = "Keysight123456"
+  zone                  = "1"
+  disable_password_authentication = false
+  network_interface_ids = [azurerm_network_interface.ntop_tool2_nic.id]
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts"
+    version   = "latest"
+  }
+}
+
+# NAT Rule for ntop2 SSH Access through Load Balancer
+resource "azurerm_lb_nat_rule" "ssh_ntop_tool2" {
+  name                           = "SSHntopTool2"
+  resource_group_name            = azurerm_resource_group.rg.name
+  loadbalancer_id                = azurerm_lb.lb.id
+  protocol                       = "Tcp"
+  frontend_port                  = 60005
+  backend_port                   = 22
+  frontend_ip_configuration_name = "FrontEnd"
+}
+
+resource "azurerm_network_interface_nat_rule_association" "ntop_tool2_nat" {
+  network_interface_id  = azurerm_network_interface.ntop_tool2_nic.id
+  ip_configuration_name = "ipconfig1"
+  nat_rule_id           = azurerm_lb_nat_rule.ssh_ntop_tool2.id
 }
 
 # VPB NSG and NICs updated address ranges to 172.16.x.x
@@ -684,6 +709,14 @@ resource "null_resource" "vpb_install" {
   }
 }
 
+output "ntop_tool1_public_ip" {
+  value = azurerm_public_ip.ntop_tool1_public_ip.ip_address
+}
+
+output "ntop_tool2_public_ip" {
+  value = azurerm_public_ip.ntop_tool2_public_ip.ip_address
+}
+
 output "vpb_public_ip" {
   value = azurerm_public_ip.vpb_public_ip.ip_address
 }
@@ -692,15 +725,12 @@ output "load_balancer_ip" {
   value = azurerm_public_ip.lb_public_ip.ip_address
 }
 
-output "tool_vm_public_ip" {
-  value = azurerm_public_ip.tool_vm_public_ip.ip_address
-}
-
 output "ssh_instructions" {
   value = <<EOF
-SSH to Suricata2 via Load Balancer: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60003
-SSH to WebServer1 source NIC: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60001 
-SSH to Tool VM:     ssh azureuser@${azurerm_public_ip.tool_vm_public_ip.ip_address}
+SSH to ntop_tool1 via Load Balancer: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60004
+SSH to ntop_tool2 via Load Balancer: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60005
+SSH to WebServer1 source NIC: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60001
+SSH to ntop_tool2 VM: ssh azureuser@${azurerm_public_ip.ntop_tool2_public_ip.ip_address}
 SSH to VPB: ssh vpb@${azurerm_public_ip.vpb_public_ip.ip_address}
 EOF
 }

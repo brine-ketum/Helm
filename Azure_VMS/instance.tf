@@ -407,13 +407,13 @@ resource "azurerm_subnet" "brinek_public_subnet" {
 }
 
 # Public IP for Ubuntu VM
-resource "azurerm_public_ip" "ubuntu_public_ip" {
-  name                = "UbuntuPublicIP"
-  location            = azurerm_resource_group.brinek_rg.location
-  resource_group_name = azurerm_resource_group.brinek_rg.name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-}
+# resource "azurerm_public_ip" "ubuntu_public_ip" {
+#   name                = "UbuntuPublicIP"
+#   location            = azurerm_resource_group.brinek_rg.location
+#   resource_group_name = azurerm_resource_group.brinek_rg.name
+#   allocation_method   = "Static"
+#   sku                 = "Standard"
+# }
 
 # Public IP for RHEL VM
 resource "azurerm_public_ip" "rhel_public_ip" {
@@ -461,19 +461,19 @@ resource "azurerm_subnet_network_security_group_association" "brinek_nsg_assoc" 
   network_security_group_id = azurerm_network_security_group.brinek_nsg.id
 }
 
-# Network Interface for Ubuntu VM
-resource "azurerm_network_interface" "ubuntu_nic" {
-  name                = "UbuntuNIC"
-  location            = azurerm_resource_group.brinek_rg.location
-  resource_group_name = azurerm_resource_group.brinek_rg.name
+# # Network Interface for Ubuntu VM
+# resource "azurerm_network_interface" "ubuntu_nic" {
+#   name                = "UbuntuNIC"
+#   location            = azurerm_resource_group.brinek_rg.location
+#   resource_group_name = azurerm_resource_group.brinek_rg.name
 
-  ip_configuration {
-    name                          = "ipconfig1"
-    subnet_id                     = azurerm_subnet.brinek_public_subnet.id
-    private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.ubuntu_public_ip.id
-  }
-}
+#   ip_configuration {
+#     name                          = "ipconfig1"
+#     subnet_id                     = azurerm_subnet.brinek_public_subnet.id
+#     private_ip_address_allocation = "Dynamic"
+#     public_ip_address_id          = azurerm_public_ip.ubuntu_public_ip.id
+#   }
+# }
 
 # Network Interface for RHEL VM
 resource "azurerm_network_interface" "rhel_nic" {
@@ -489,45 +489,45 @@ resource "azurerm_network_interface" "rhel_nic" {
   }
 }
 
-# Ubuntu Linux VM
-resource "azurerm_linux_virtual_machine" "ubuntu_vm" {
-  name                = "UbuntuVM"
-  resource_group_name = azurerm_resource_group.brinek_rg.name
-  location            = azurerm_resource_group.brinek_rg.location
-  size                = "Standard_D4s_v3"
-  admin_username      = "brine"
-  admin_password      = "Bravedemo123!"
-  network_interface_ids = [
-    azurerm_network_interface.ubuntu_nic.id,
-  ]
+# # Ubuntu Linux VM
+# resource "azurerm_linux_virtual_machine" "ubuntu_vm" {
+#   name                = "UbuntuVM"
+#   resource_group_name = azurerm_resource_group.brinek_rg.name
+#   location            = azurerm_resource_group.brinek_rg.location
+#   size                = "Standard_D4s_v3"
+#   admin_username      = "brine"
+#   admin_password      = "Bravedemo123!"
+#   network_interface_ids = [
+#     azurerm_network_interface.ubuntu_nic.id,
+#   ]
 
-  os_disk {
-    caching              = "ReadWrite"
-    disk_size_gb         = 127
-    storage_account_type = "Standard_LRS"
-  }
+#   os_disk {
+#     caching              = "ReadWrite"
+#     disk_size_gb         = 127
+#     storage_account_type = "Standard_LRS"
+#   }
 
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-focal"
-    sku       = "20_04-lts"
-    version   = "latest"
-  }
+#   source_image_reference {
+#     publisher = "Canonical"
+#     offer     = "0001-com-ubuntu-server-focal"
+#     sku       = "20_04-lts"
+#     version   = "latest"
+#   }
 
-  custom_data = base64encode(<<-EOF
-    #!/bin/bash
-    sudo apt update
-    sudo apt-get install -y nginx
-  EOF
-  )
+#   custom_data = base64encode(<<-EOF
+#     #!/bin/bash
+#     sudo apt update
+#     sudo apt-get install -y nginx
+#   EOF
+#   )
 
-  disable_password_authentication = false
+#   disable_password_authentication = false
 
-  tags = {
-    Name = "UbuntuVM"
-    Env  = "Development"
-  }
-}
+#   tags = {
+#     Name = "UbuntuVM"
+#     Env  = "Development"
+#   }
+# }
 
 # RHEL Linux VM
 resource "azurerm_linux_virtual_machine" "rhel_vm" {
@@ -554,18 +554,18 @@ resource "azurerm_linux_virtual_machine" "rhel_vm" {
     version   = "latest"
   }
 
-  custom_data = base64encode(<<-EOF
-    #!/bin/bash
-    sudo yum update -y
-    sudo yum install -y httpd
-    sudo systemctl start httpd
-    sudo systemctl enable httpd
-    sudo firewall-cmd --permanent --add-service=http
-    sudo firewall-cmd --reload
+# Run sudo firewall-cmd --permanent --add-service=http
+# sudo firewall-cmd --reload
+# sudo firewall-cmd --list-all
 
-  EOF
-  )
-
+custom_data = base64encode(<<-EOF
+  #!/bin/bash
+  sudo yum update -y
+  sudo yum install httpd -y
+  sudo systemctl enable httpd
+  sudo systemctl start httpd
+EOF
+)
   disable_password_authentication = false
 
   tags = {
@@ -575,18 +575,17 @@ resource "azurerm_linux_virtual_machine" "rhel_vm" {
 }
 
 # Output Public IPs
-output "ubuntu_public_ip" {
-  value = azurerm_public_ip.ubuntu_public_ip.ip_address
-}
+# output "ubuntu_public_ip" {
+#   value = azurerm_public_ip.ubuntu_public_ip.ip_address
+# }
 
 output "rhel_public_ip" {
   value = azurerm_public_ip.rhel_public_ip.ip_address
 }
 
-
+#SSH to Ubuntu VM: ssh brine@${azurerm_public_ip.ubuntu_public_ip.ip_address}
 output "ssh_instructions" {
   value = <<EOF
-SSH to Ubuntu VM: ssh brine@${azurerm_public_ip.ubuntu_public_ip.ip_address}
 SSH to RHEL VM: ssh brine@${azurerm_public_ip.rhel_public_ip.ip_address}
 EOF
 }

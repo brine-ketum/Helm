@@ -8,3 +8,6 @@
 **/.terraform/
 *.tfstate
 *.tfstate.backup
+*.backup
+*.tfstate
+.terraform/
