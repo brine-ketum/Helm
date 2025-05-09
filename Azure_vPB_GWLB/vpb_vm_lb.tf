@@ -172,11 +172,26 @@ resource "azurerm_network_security_rule" "nsg_rule_http" {
   protocol                    = "Tcp"
   source_port_range           = "*"
   destination_port_range      = "80"
-  source_address_prefix       = "*"
+  source_address_prefix       = "40.143.44.44"
   destination_address_prefix  = "*"
   resource_group_name         = azurerm_resource_group.rg.name
   network_security_group_name = azurerm_network_security_group.nsg.name
 }
+
+resource "azurerm_network_security_rule" "nsg_rule_https" {
+  name                        = "NSGRuleHTTPS"
+  priority                    = 203
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "443"
+  source_address_prefix       = "40.143.44.44"
+  destination_address_prefix  = "*"
+  resource_group_name         = azurerm_resource_group.rg.name
+  network_security_group_name = azurerm_network_security_group.nsg.name
+}
+
 
 resource "azurerm_network_security_rule" "nsg_rule_ssh" {
   name                        = "NSGRuleSSH"
@@ -186,7 +201,7 @@ resource "azurerm_network_security_rule" "nsg_rule_ssh" {
   protocol                    = "Tcp"
   source_port_range           = "*"
   destination_port_range      = "22"
-  source_address_prefix       = "*"
+  source_address_prefix       = "40.143.44.44"
   destination_address_prefix  = "*"
   resource_group_name         = azurerm_resource_group.rg.name
   network_security_group_name = azurerm_network_security_group.nsg.name
@@ -341,7 +356,7 @@ resource "azurerm_network_security_rule" "nsg_rule_tcp_3000" {
   protocol                    = "Tcp"
   source_port_range           = "*"
   destination_port_range      = "3000"
-  source_address_prefix       = "*"
+  source_address_prefix       = "40.143.44.44"
   destination_address_prefix  = "*"
   resource_group_name         = azurerm_resource_group.rg.name
   network_security_group_name = azurerm_network_security_group.nsg.name
@@ -375,6 +390,7 @@ resource "azurerm_network_interface" "ntop_tool1_nic" {
   name                = "ntop_tool1Nic"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
+  accelerated_networking_enabled = true
   ip_configuration {
     name                          = "ipconfig1"
     subnet_id                     = azurerm_subnet.tool.id
@@ -409,21 +425,21 @@ resource "azurerm_linux_virtual_machine" "ntop_tool1_vm" {
   }
 }
 
-resource "azurerm_lb_nat_rule" "ssh_ntop_tool1" {
-  name                           = "SSHntopTool1"
-  resource_group_name            = azurerm_resource_group.rg.name
-  loadbalancer_id                = azurerm_lb.lb.id
-  protocol                       = "Tcp"
-  frontend_port                  = 60004
-  backend_port                   = 22
-  frontend_ip_configuration_name = "FrontEnd"
-}
+# resource "azurerm_lb_nat_rule" "ssh_ntop_tool1" {
+#   name                           = "SSHntopTool1"
+#   resource_group_name            = azurerm_resource_group.rg.name
+#   loadbalancer_id                = azurerm_lb.lb.id
+#   protocol                       = "Tcp"
+#   frontend_port                  = 60004
+#   backend_port                   = 22
+#   frontend_ip_configuration_name = "FrontEnd"
+# }
 
-resource "azurerm_network_interface_nat_rule_association" "ntop_tool1_nat" {
-  network_interface_id  = azurerm_network_interface.ntop_tool1_nic.id
-  ip_configuration_name = "ipconfig1"
-  nat_rule_id           = azurerm_lb_nat_rule.ssh_ntop_tool1.id
-}
+# resource "azurerm_network_interface_nat_rule_association" "ntop_tool1_nat" {
+#   network_interface_id  = azurerm_network_interface.ntop_tool1_nic.id
+#   ip_configuration_name = "ipconfig1"
+#   nat_rule_id           = azurerm_lb_nat_rule.ssh_ntop_tool1.id
+# }
 #Ntop2
 
 # Public IP for Suricata2 VM
@@ -441,6 +457,7 @@ resource "azurerm_network_interface" "ntop_tool2_nic" {
   name                = "ntop_tool2Nic"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
+  accelerated_networking_enabled = true
   ip_configuration {
     name                          = "ipconfig1"
     subnet_id                     = azurerm_subnet.tool.id
@@ -495,6 +512,21 @@ resource "azurerm_network_interface_nat_rule_association" "ntop_tool2_nat" {
   ip_configuration_name = "ipconfig1"
   nat_rule_id           = azurerm_lb_nat_rule.ssh_ntop_tool2.id
 }
+
+# resource "azurerm_network_security_rule" "nsg_allow_vxlan" {
+#   name                        = "AllowVXLANUDP"
+#   priority                    = 203
+#   direction                   = "Inbound"
+#   access                      = "Allow"
+#   protocol                    = "Udp"
+#   source_port_range           = "*"
+#   destination_port_range      = "4789"
+#   source_address_prefix       = "*"
+#   destination_address_prefix  = "*"
+#   resource_group_name         = azurerm_resource_group.rg.name
+#   network_security_group_name = azurerm_network_security_group.nsg.name
+# }
+
 
 # VPB NSG and NICs updated address ranges to 172.16.x.x
 resource "azurerm_network_security_group" "vpb_nsg" {
@@ -558,6 +590,21 @@ resource "azurerm_network_security_rule" "vpb_allow_http" {
   resource_group_name         = azurerm_resource_group.rg.name
   network_security_group_name = azurerm_network_security_group.vpb_nsg.name
 }
+
+resource "azurerm_network_security_rule" "vpb_allow_ssh" {
+  name                        = "AllowVPB2SSH"
+  priority                    = 111
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "22"
+  source_address_prefix       = "*" # Or your IP
+  destination_address_prefix  = "*"
+  resource_group_name         = azurerm_resource_group.rg.name
+  network_security_group_name = azurerm_network_security_group.vpb_nsg.name
+}
+
 
 resource "azurerm_public_ip" "vpb_public_ip" {
   name                = "VPB-PublicIP"
@@ -709,6 +756,437 @@ resource "null_resource" "vpb_install" {
   }
 }
 
+
+#Add code 
+
+# VPB2 Public IP
+resource "azurerm_public_ip" "vpb2_public_ip" {
+  name                = "VPB2-PublicIP"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  zones               = ["1", "2", "3"]
+}
+
+# VPB2 NICs
+resource "azurerm_network_interface" "vpb2_nic1" {
+  name                = "VPB2Nic1"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  ip_configuration {
+    name                          = "ipconfig1"
+    subnet_id                     = azurerm_subnet.vpb_mgmt.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.vpb2_public_ip.id
+  }
+}
+
+resource "azurerm_network_interface" "vpb2_nic2" {
+  name                           = "VPB2Ingress"
+  location                       = azurerm_resource_group.rg.location
+  resource_group_name            = azurerm_resource_group.rg.name
+  accelerated_networking_enabled = true
+  ip_forwarding_enabled          = true
+
+  ip_configuration {
+    name                          = "ipconfig1"
+    subnet_id                     = azurerm_subnet.vpb_ingress.id
+    private_ip_address_allocation = "Dynamic"
+  }
+}
+
+resource "azurerm_network_interface" "vpb2_nic3" {
+  name                           = "VPB2Egress"
+  location                       = azurerm_resource_group.rg.location
+  resource_group_name            = azurerm_resource_group.rg.name
+  accelerated_networking_enabled = true
+  ip_forwarding_enabled          = true
+
+  ip_configuration {
+    name                          = "ipconfig1"
+    subnet_id                     = azurerm_subnet.vpb_egress.id
+    private_ip_address_allocation = "Dynamic"
+  }
+}
+
+# NIC - NSG Associations
+resource "azurerm_network_interface_security_group_association" "vpb2_nic1_nsg" {
+  network_interface_id      = azurerm_network_interface.vpb2_nic1.id
+  network_security_group_id = azurerm_network_security_group.vpb_nsg.id
+}
+resource "azurerm_network_interface_security_group_association" "vpb2_nic2_nsg" {
+  network_interface_id      = azurerm_network_interface.vpb2_nic2.id
+  network_security_group_id = azurerm_network_security_group.vpb_nsg.id
+}
+resource "azurerm_network_interface_security_group_association" "vpb2_nic3_nsg" {
+  network_interface_id      = azurerm_network_interface.vpb2_nic3.id
+  network_security_group_id = azurerm_network_security_group.vpb_nsg.id
+}
+
+# VPB2 Linux VM
+resource "azurerm_linux_virtual_machine" "vpb_vm2" {
+  name                  = "vPB2"
+  location              = azurerm_resource_group.rg.location
+  resource_group_name   = azurerm_resource_group.rg.name
+  size                  = "Standard_D8_v5"
+  admin_username        = "vpb"
+  admin_password        = "Keysight!123456"
+  disable_password_authentication = false
+  zone                  = "1"
+
+  network_interface_ids = [
+    azurerm_network_interface.vpb2_nic1.id,
+    azurerm_network_interface.vpb2_nic2.id,
+    azurerm_network_interface.vpb2_nic3.id
+  ]
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+    disk_size_gb         = 30
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+}
+
+# VPB2 Install Script
+resource "null_resource" "vpb2_install" {
+depends_on = [
+  azurerm_network_security_group.vpb_nsg,
+  azurerm_network_security_rule.vpb_allow_ssh,
+  azurerm_network_interface_security_group_association.vpb2_nic1_nsg,
+  azurerm_linux_virtual_machine.vpb_vm2
+]
+
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = [triggers]
+  }
+
+  triggers = {
+    script_checksum = filesha256("/Users/brinketu/Downloads/vpb-3.9.0-42-install-package.sh")
+  }
+
+  provisioner "file" {
+    source      = "/Users/brinketu/Downloads/vpb-3.9.0-42-install-package.sh"
+    destination = "/home/vpb/vpb-installer.sh"
+
+    connection {
+      type     = "ssh"
+      user     = "vpb"
+      password = "Keysight!123456"
+      host     = azurerm_public_ip.lb_public_ip.ip_address
+      port = 60006
+      timeout  = "10m"
+    }
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "ls -l /home/vpb",
+      "sleep 60",
+      "if [ ! -f /home/vpb/.vpb_installed ]; then",
+      "  chmod +x /home/vpb/vpb-installer.sh",
+      "  sudo bash /home/vpb/vpb-installer.sh",
+      "  touch /home/vpb/.vpb_installed",
+      "else",
+      "  echo 'VPB2 already installed. Skipping...'",
+      "fi"
+    ]
+
+    connection {
+      type     = "ssh"
+      user     = "vpb"
+      password = "Keysight!123456"
+      host     = azurerm_public_ip.lb_public_ip.ip_address
+      port = 60006
+      timeout  = "10m"
+    }
+  }
+}
+# ILB Backend Pool Associations for VPBs
+resource "azurerm_network_interface_backend_address_pool_association" "vpb1_ingress_pool" {
+  network_interface_id    = azurerm_network_interface.vpb_nic2.id
+  ip_configuration_name   = "ipconfig1"
+  backend_address_pool_id = azurerm_lb_backend_address_pool.ilb_backend_pool.id
+}
+resource "azurerm_network_interface_backend_address_pool_association" "vpb2_ingress_pool" {
+  network_interface_id    = azurerm_network_interface.vpb2_nic2.id
+  ip_configuration_name   = "ipconfig1"
+  backend_address_pool_id = azurerm_lb_backend_address_pool.ilb_backend_pool.id
+}
+
+# Internal Load Balancer for Ingress Traffic
+resource "azurerm_lb" "ilb" {
+  name                = "ILB-VPBIngress"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  sku                 = "Standard"
+
+  frontend_ip_configuration {
+    name                          = "ILBFrontend"
+    subnet_id                     = azurerm_subnet.vpb_ingress.id
+    private_ip_address_allocation = "Static"
+    private_ip_address            = "172.16.21.10"
+  }
+}
+
+resource "azurerm_lb_backend_address_pool" "ilb_backend_pool" {
+  loadbalancer_id = azurerm_lb.ilb.id
+  name            = "IngressPool"
+}
+
+resource "azurerm_lb_probe" "ilb_health_probe" {
+  loadbalancer_id = azurerm_lb.ilb.id
+  name            = "ILBHealthProbe"
+  port            = 80
+  protocol        = "Tcp"
+}
+
+
+resource "azurerm_lb_rule" "ilb_rule" {
+  loadbalancer_id                = azurerm_lb.ilb.id
+  name                           = "ILBRule"
+  protocol                       = "Tcp"
+  frontend_port                  = 80
+  backend_port                   = 80
+  frontend_ip_configuration_name = "ILBFrontend"
+  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.ilb_backend_pool.id]
+  probe_id                       = azurerm_lb_probe.ilb_health_probe.id
+  disable_outbound_snat          = true
+  idle_timeout_in_minutes        = 15
+  enable_tcp_reset               = true
+}
+
+resource "azurerm_lb_rule" "vxlan_rule" {
+  loadbalancer_id                = azurerm_lb.ilb.id
+  name                           = "VXLANRule"
+  protocol                       = "Udp"
+  frontend_port                  = 4789
+  backend_port                   = 4789
+  frontend_ip_configuration_name = "ILBFrontend"
+  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.ilb_backend_pool.id]
+  probe_id                       = azurerm_lb_probe.ilb_health_probe.id  # You may define a separate UDP probe
+  disable_outbound_snat          = true
+  idle_timeout_in_minutes        = 15
+  enable_tcp_reset               = false  # Only relevant for TCP
+}
+
+resource "azurerm_lb_nat_rule" "ssh_vpb2" {
+  name                           = "SSHVPB2"
+  resource_group_name            = azurerm_resource_group.rg.name
+  loadbalancer_id                = azurerm_lb.lb.id
+  protocol                       = "Tcp"
+  frontend_port                  = 60006
+  backend_port                   = 22
+  frontend_ip_configuration_name = "FrontEnd"
+}
+
+resource "azurerm_network_interface_nat_rule_association" "vpb2_nat" {
+  network_interface_id  = azurerm_network_interface.vpb2_nic1.id
+  ip_configuration_name = "ipconfig1"
+  nat_rule_id           = azurerm_lb_nat_rule.ssh_vpb2.id
+}
+
+
+#vPB3 
+# resource "azurerm_public_ip" "vpb3_public_ip" {
+#   name                = "VPB3-PublicIP"
+#   location            = azurerm_resource_group.rg.location
+#   resource_group_name = azurerm_resource_group.rg.name
+#   allocation_method   = "Static"
+#   sku                 = "Standard"
+#   zones               = ["1", "2", "3"]
+# }
+
+
+# resource "azurerm_network_interface" "vpb3_nic1" {
+#   name                = "VPB3Nic1"
+#   location            = azurerm_resource_group.rg.location
+#   resource_group_name = azurerm_resource_group.rg.name
+#   ip_configuration {
+#     name                          = "ipconfig1"
+#     subnet_id                     = azurerm_subnet.vpb_mgmt.id
+#     private_ip_address_allocation = "Dynamic"
+#     public_ip_address_id          = azurerm_public_ip.vpb3_public_ip.id
+#   }
+# }
+
+# resource "azurerm_network_interface" "vpb3_nic2" {
+#   name                = "VPB3Ingress"
+#   location            = azurerm_resource_group.rg.location
+#   resource_group_name = azurerm_resource_group.rg.name
+#   accelerated_networking_enabled = true
+#   ip_forwarding_enabled = true
+#   ip_configuration {
+#     name                          = "ipconfig1"
+#     subnet_id                     = azurerm_subnet.vpb_ingress.id
+#     private_ip_address_allocation = "Dynamic"
+#   }
+# }
+
+# resource "azurerm_network_interface" "vpb3_nic3" {
+#   name                = "VPB3Egress"
+#   location            = azurerm_resource_group.rg.location
+#   resource_group_name = azurerm_resource_group.rg.name
+#   accelerated_networking_enabled = true
+#   ip_forwarding_enabled = true
+#   ip_configuration {
+#     name                          = "ipconfig1"
+#     subnet_id                     = azurerm_subnet.vpb_egress.id
+#     private_ip_address_allocation = "Dynamic"
+#   }
+# }
+
+# resource "azurerm_network_interface_security_group_association" "vpb3_nic1_nsg" {
+#   network_interface_id      = azurerm_network_interface.vpb3_nic1.id
+#   network_security_group_id = azurerm_network_security_group.vpb_nsg.id
+# }
+
+# resource "azurerm_network_interface_security_group_association" "vpb3_nic2_nsg" {
+#   network_interface_id      = azurerm_network_interface.vpb3_nic2.id
+#   network_security_group_id = azurerm_network_security_group.vpb_nsg.id
+# }
+
+# resource "azurerm_network_interface_security_group_association" "vpb3_nic3_nsg" {
+#   network_interface_id      = azurerm_network_interface.vpb3_nic3.id
+#   network_security_group_id = azurerm_network_security_group.vpb_nsg.id
+# }
+
+
+# resource "azurerm_linux_virtual_machine" "vpb_vm3" {
+#   name                = "vPB3"
+#   location            = azurerm_resource_group.rg.location
+#   resource_group_name = azurerm_resource_group.rg.name
+#   size                = "Standard_D8_v5"
+#   admin_username      = "vpb"
+#   admin_password      = "Keysight!123456"
+#   disable_password_authentication = false
+#   zone                = "1"
+
+#   network_interface_ids = [
+#     azurerm_network_interface.vpb3_nic1.id,
+#     azurerm_network_interface.vpb3_nic2.id,
+#     azurerm_network_interface.vpb3_nic3.id
+#   ]
+
+#   os_disk {
+#     caching              = "ReadWrite"
+#     storage_account_type = "Standard_LRS"
+#     disk_size_gb         = 30
+#   }
+
+#   source_image_reference {
+#     publisher = "Canonical"
+#     offer     = "0001-com-ubuntu-server-jammy"
+#     sku       = "22_04-lts-gen2"
+#     version   = "latest"
+#   }
+# }
+
+# resource "null_resource" "vpb3_install" {
+#   depends_on = [
+#     azurerm_network_security_group.vpb_nsg,
+#     azurerm_network_security_rule.vpb_allow_ssh,
+#     azurerm_network_interface_security_group_association.vpb3_nic1_nsg,
+#     azurerm_linux_virtual_machine.vpb_vm3
+#   ]
+
+#   lifecycle {
+#     create_before_destroy = true
+#     ignore_changes        = [triggers]
+#   }
+
+#   triggers = {
+#     script_checksum = filesha256("/Users/brinketu/Downloads/vpb-3.9.0-42-install-package.sh")
+#   }
+
+#   provisioner "file" {
+#     source      = "/Users/brinketu/Downloads/vpb-3.9.0-42-install-package.sh"
+#     destination = "/home/vpb/vpb-installer.sh"
+
+#     connection {
+#       type     = "ssh"
+#       user     = "vpb"
+#       password = "Keysight!123456"
+#       host     = azurerm_public_ip.lb_public_ip.ip_address
+#       port     = 60007
+#       timeout  = "10m"
+#     }
+#   }
+
+#   provisioner "remote-exec" {
+#     inline = [
+#       "ls -l /home/vpb",
+#       "sleep 60",
+#       "if [ ! -f /home/vpb/.vpb_installed ]; then",
+#       "  chmod +x /home/vpb/vpb-installer.sh",
+#       "  sudo bash /home/vpb/vpb-installer.sh",
+#       "  touch /home/vpb/.vpb_installed",
+#       "else",
+#       "  echo 'VPB3 already installed. Skipping...'",
+#       "fi"
+#     ]
+
+#     connection {
+#       type     = "ssh"
+#       user     = "vpb"
+#       password = "Keysight!123456"
+#       host     = azurerm_public_ip.lb_public_ip.ip_address
+#       port     = 60007
+#       timeout  = "10m"
+#     }
+#   }
+# }
+
+
+# # NAT Rule for VPB3 SSH Access through Load Balancer
+# resource "azurerm_lb_nat_rule" "ssh_vpb3" {
+#   name                           = "SSHVPB3"
+#   resource_group_name            = azurerm_resource_group.rg.name
+#   loadbalancer_id                = azurerm_lb.lb.id
+#   protocol                       = "Tcp"
+#   frontend_port                  = 60007
+#   backend_port                   = 22
+#   frontend_ip_configuration_name = "FrontEnd"
+# }
+
+# resource "azurerm_network_interface_nat_rule_association" "vpb3_nat" {
+#   network_interface_id  = azurerm_network_interface.vpb3_nic1.id
+#   ip_configuration_name = "ipconfig1"
+#   nat_rule_id           = azurerm_lb_nat_rule.ssh_vpb3.id
+# }
+
+# # ILB Backend Pool Associations for VPB3
+# resource "azurerm_network_interface_backend_address_pool_association" "vpb3_ingress_pool" {
+#   network_interface_id    = azurerm_network_interface.vpb3_nic2.id
+#   ip_configuration_name   = "ipconfig1"
+#   backend_address_pool_id = azurerm_lb_backend_address_pool.ilb_backend_pool.id
+# }
+# output "vpb3_public_ip" {
+#   value = azurerm_public_ip.vpb3_public_ip.ip_address
+# }
+
+#Direct SSH to VPB3: ssh vpb@${azurerm_public_ip.vpb3_public_ip.ip_address}
+#SSH to VPB3 via Load Balancer: ssh vpb@${azurerm_public_ip.lb_public_ip.ip_address} -p 60007
+
+# Outputs
+output "vpb2_public_ip" {
+  value = azurerm_public_ip.vpb2_public_ip.ip_address
+}
+
+output "vpb_ingress_ilb_ip" {
+  value = azurerm_lb.ilb.frontend_ip_configuration[0].private_ip_address
+}
+
 output "ntop_tool1_public_ip" {
   value = azurerm_public_ip.ntop_tool1_public_ip.ip_address
 }
@@ -725,12 +1203,17 @@ output "load_balancer_ip" {
   value = azurerm_public_ip.lb_public_ip.ip_address
 }
 
+# Update SSH instructions
 output "ssh_instructions" {
   value = <<EOF
 SSH to ntop_tool1 via Load Balancer: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60004
 SSH to ntop_tool2 via Load Balancer: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60005
 SSH to WebServer1 source NIC: ssh azureuser@${azurerm_public_ip.lb_public_ip.ip_address} -p 60001
-SSH to ntop_tool2 VM: ssh azureuser@${azurerm_public_ip.ntop_tool2_public_ip.ip_address}
-SSH to VPB: ssh vpb@${azurerm_public_ip.vpb_public_ip.ip_address}
+SSH to VPB2 via Load Balancer: ssh vpb@${azurerm_public_ip.lb_public_ip.ip_address} -p 60006
+
+
+Direct SSH to ntop_tool2 VM: ssh azureuser@${azurerm_public_ip.ntop_tool2_public_ip.ip_address}
+Direct SSH to VPB1: ssh vpb@${azurerm_public_ip.vpb_public_ip.ip_address}
+Direct SSH to VPB2: ssh vpb@${azurerm_public_ip.vpb2_public_ip.ip_address}
 EOF
 }
