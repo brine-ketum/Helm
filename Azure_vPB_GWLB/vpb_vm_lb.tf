@@ -407,16 +407,18 @@ resource "azurerm_linux_virtual_machine" "ntop_tool1_vm" {
   computer_name         = "ntoptool1"
   location              = azurerm_resource_group.rg.location
   resource_group_name   = azurerm_resource_group.rg.name
-  size                  = "Standard_D4s_v3"
+  size                  = "Standard_D8s_v3"
   admin_username        = "azureuser"
   admin_password        = "Keysight123456"
   zone                  = "1"
   disable_password_authentication = false
   network_interface_ids = [azurerm_network_interface.ntop_tool1_nic.id]
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
+os_disk {
+  caching              = "ReadWrite"
+  storage_account_type = "Standard_LRS"
+  disk_size_gb         = 200
+}
+
   source_image_reference {
     publisher = "Canonical"
     offer     = "0001-com-ubuntu-server-jammy"
@@ -425,21 +427,21 @@ resource "azurerm_linux_virtual_machine" "ntop_tool1_vm" {
   }
 }
 
-# resource "azurerm_lb_nat_rule" "ssh_ntop_tool1" {
-#   name                           = "SSHntopTool1"
-#   resource_group_name            = azurerm_resource_group.rg.name
-#   loadbalancer_id                = azurerm_lb.lb.id
-#   protocol                       = "Tcp"
-#   frontend_port                  = 60004
-#   backend_port                   = 22
-#   frontend_ip_configuration_name = "FrontEnd"
-# }
+resource "azurerm_lb_nat_rule" "ssh_ntop_tool1" {
+  name                           = "SSHntopTool1"
+  resource_group_name            = azurerm_resource_group.rg.name
+  loadbalancer_id                = azurerm_lb.lb.id
+  protocol                       = "Tcp"
+  frontend_port                  = 60004
+  backend_port                   = 22
+  frontend_ip_configuration_name = "FrontEnd"
+}
 
-# resource "azurerm_network_interface_nat_rule_association" "ntop_tool1_nat" {
-#   network_interface_id  = azurerm_network_interface.ntop_tool1_nic.id
-#   ip_configuration_name = "ipconfig1"
-#   nat_rule_id           = azurerm_lb_nat_rule.ssh_ntop_tool1.id
-# }
+resource "azurerm_network_interface_nat_rule_association" "ntop_tool1_nat" {
+  network_interface_id  = azurerm_network_interface.ntop_tool1_nic.id
+  ip_configuration_name = "ipconfig1"
+  nat_rule_id           = azurerm_lb_nat_rule.ssh_ntop_tool1.id
+}
 #Ntop2
 
 # Public IP for Suricata2 VM
@@ -478,16 +480,18 @@ resource "azurerm_linux_virtual_machine" "ntop_tool2_vm" {
   computer_name         = "ntoptool2"
   location              = azurerm_resource_group.rg.location
   resource_group_name   = azurerm_resource_group.rg.name
-  size                  = "Standard_D4s_v3"
+  size                  = "Standard_D8s_v3"
   admin_username        = "azureuser"
   admin_password        = "Keysight123456"
   zone                  = "1"
   disable_password_authentication = false
   network_interface_ids = [azurerm_network_interface.ntop_tool2_nic.id]
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
+os_disk {
+  caching              = "ReadWrite"
+  storage_account_type = "Standard_LRS"
+  disk_size_gb         = 200
+}
+
   source_image_reference {
     publisher = "Canonical"
     offer     = "0001-com-ubuntu-server-jammy"
@@ -690,7 +694,7 @@ resource "azurerm_linux_virtual_machine" "vpb_vm" {
   os_disk {
     caching              = "ReadWrite"
     storage_account_type = "Standard_LRS"
-    disk_size_gb         = 30
+    disk_size_gb         = 150
   }
 
   source_image_reference {
@@ -845,7 +849,7 @@ resource "azurerm_linux_virtual_machine" "vpb_vm2" {
   os_disk {
     caching              = "ReadWrite"
     storage_account_type = "Standard_LRS"
-    disk_size_gb         = 30
+    disk_size_gb         = 150
   }
 
   source_image_reference {
