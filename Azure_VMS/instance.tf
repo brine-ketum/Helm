@@ -72,7 +72,7 @@ resource "azurerm_network_security_group" "brinek_nsg" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "3389"
-    source_address_prefix      = "*"  # Change to your actual IP or CIDR
+    source_address_prefix      = "40.143.44.44/32"  # Change to your actual IP or CIDR
     destination_address_prefix = "*"
   }
 
@@ -84,7 +84,7 @@ security_rule {
   protocol                   = "Tcp"
   source_port_range          = "*"
   destination_port_ranges    = ["5985", "5986"]
-  source_address_prefix      = "*"  # or restrict to control server IP
+  source_address_prefix      = "40.143.44.44/32"  # or restrict to control server IP
   destination_address_prefix = "*"
 }
 }
@@ -209,7 +209,7 @@ resource "azurerm_linux_virtual_machine" "rhel_vm" {
   location            = azurerm_resource_group.brinek_rg.location
   size                = "Standard_D4s_v3"
   admin_username      = "brine"
-  admin_password      = "Bravedemo123!"
+  admin_password      = "Bravedemo123."
   network_interface_ids = [
     azurerm_network_interface.rhel_nic.id,
   ]
@@ -276,7 +276,7 @@ resource "azurerm_linux_virtual_machine" "centos_vm" {
   location            = azurerm_resource_group.brinek_rg.location
   size                = "Standard_D2s_v3"
   admin_username      = "brine"
-  admin_password      = "Bravedemo123!"  # Only if you're using password auth
+  admin_password      = "Bravedemo123."  # Only if you're using password auth
 
   network_interface_ids = [
     azurerm_network_interface.centos_nic.id,
@@ -348,7 +348,7 @@ resource "azurerm_windows_virtual_machine" "windows_vm" {
   location            = azurerm_resource_group.brinek_rg.location
   size                = "Standard_D4s_v3"
   admin_username      = "brineadmin"
-  admin_password      = "BraveDemoWin123!"  # Ensure this meets Azure password complexity requirements
+  admin_password      = "Bravedemo123."  # Ensure this meets Azure password complexity requirements
   depends_on = [azurerm_network_interface.windows_nic]
 
   network_interface_ids = [
@@ -370,26 +370,25 @@ resource "azurerm_windows_virtual_machine" "windows_vm" {
 
   provision_vm_agent        = true
   enable_automatic_updates  = true
+  # Custom Data to enable RDP and WinRM
+  # This script enables RDP, configures firewall rules, and starts the WinRM service
+
 
 custom_data = base64encode(<<-EOF
+
 <powershell>
 
-# Enable Remote Desktop
-Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name "fDenyTSConnections" -Value 0
-
-# Enable RDP firewall rules (both pre-Windows 2012 and newer)
-Get-NetFirewallRule -DisplayGroup "Remote Desktop" | Enable-NetFirewallRule
-
-# Start the Remote Desktop service if not running
-if ((Get-Service TermService).Status -ne 'Running') {
-    Start-Service TermService
-}
-
-# Optional: Set Network Level Authentication to require it (recommended)
-Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' -Name 'UserAuthentication' -Value 1
-
+  #Enable RDP and set to Private Network
+  Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name "fDenyTSConnections" -Value 0
+  Get-NetFirewallRule -DisplayGroup "Remote Desktop" | Enable-NetFirewallRule
+  Set-Service -Name TermService -StartupType Automatic
+  Start-Service TermService
+  Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' -Name 'UserAuthentication' -Value 0
+  Set-NetConnectionProfile -InterfaceAlias "Ethernet" -NetworkCategory Private
 </powershell>
+
 EOF
+
 )
 
   tags = {
@@ -398,29 +397,33 @@ EOF
   }
 }
 
-resource "azurerm_virtual_machine_extension" "winrm_config" {
-  name                 = "winrm-config-extension"
-  virtual_machine_id   = azurerm_windows_virtual_machine.windows_vm.id
-  publisher            = "Microsoft.Compute"
-  type                 = "CustomScriptExtension"
-  type_handler_version = "1.10"  # latest stable version
+# Uncomment the following block only after deploying the Windows VM
 
-  # Use 'settings' for non-sensitive public config only, but fileUris is sensitive - use protected_settings
-  settings = <<SETTINGS
-{}
-SETTINGS
 
-  protected_settings = <<PROTECTED_SETTINGS
-{
-  "fileUris": [
-    "https://raw.githubusercontent.com/ansible/ansible/stable-2.9/examples/scripts/ConfigureRemotingForAnsible.ps1"
-  ],
-  "commandToExecute": "powershell -ExecutionPolicy Unrestricted -File ConfigureRemotingForAnsible.ps1"
-}
-PROTECTED_SETTINGS
+# This extension configures WinRM for Ansible
+# resource "azurerm_virtual_machine_extension" "winrm_config" {
+#   name                 = "winrm-config-extension"
+#   virtual_machine_id   = azurerm_windows_virtual_machine.windows_vm.id
+#   publisher            = "Microsoft.Compute"
+#   type                 = "CustomScriptExtension"
+#   type_handler_version = "1.10"  # latest stable version
 
-  depends_on = [azurerm_windows_virtual_machine.windows_vm]
-}
+#   # Use 'settings' for non-sensitive public config only, but fileUris is sensitive - use protected_settings
+#   settings = <<SETTINGS
+# {}
+# SETTINGS
+
+#   protected_settings = <<PROTECTED_SETTINGS
+# {
+#   "fileUris": [
+#     "https://raw.githubusercontent.com/ansible/ansible/stable-2.9/examples/scripts/ConfigureRemotingForAnsible.ps1"
+#   ],
+#   "commandToExecute": "powershell -ExecutionPolicy Unrestricted -File ConfigureRemotingForAnsible.ps1"
+# }
+# PROTECTED_SETTINGS
+
+#   depends_on = [azurerm_windows_virtual_machine.windows_vm]
+# }
 # Output to get the RDP command
 output "rdp_command_to_windows" {
   value = "mstsc /v:${azurerm_public_ip.windows_public_ip.ip_address}"
@@ -436,3 +439,13 @@ output "centos_ssh_command" {
 output "ssh_command_to_rhel" {
   value = "ssh -i /path/to/your/private/key brine@${azurerm_public_ip.rhel_public_ip.ip_address}"
 }
+
+
+#Test RDP Access
+# Once applied:
+
+# Run: terraform output rdp_command_to_windows
+
+# Paste into the Run dialog (Windows + R)
+
+# Enter credentials: brineadmin / BraveDemoWin123!
