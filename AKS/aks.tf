@@ -3,7 +3,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0"  # Use the latest 3.x version
+      version = "~> 3.0"
     }
   }
 }
@@ -15,89 +15,74 @@ provider "azurerm" {
 
 ## Variables
 variable "location" {
-  description = "Azure region where resources will be created"
-  default     = "eastus2"
+  default = "eastus2"
 }
 
 variable "resource_group_name" {
-  description = "Name of the resource group"
-  default     = "aksResourceGroup"
+  default = "BrineN"
 }
 
 variable "aks_cluster_name" {
-  description = "Name of the AKS cluster"
-  default     = "Keysight_AZ_Cluster"
+  default = "Keysight_AZ_Cluster"
 }
 
 variable "acr_name" {
-  description = "Name of the Azure Container Registry"
-  default     = "brinesregistry"
+  default = "brinesregistry"
 }
 
 variable "node_count" {
-  description = "Number of nodes in the AKS cluster"
-  default     = 3
-}
-
-## Resource Group
-resource "azurerm_resource_group" "aks_rg" {
-  name     = var.resource_group_name
-  location = var.location
+  default = 3
 }
 
 ## Virtual Network
 resource "azurerm_virtual_network" "aks_vnet" {
   name                = "aksVnet"
   address_space       = ["10.0.0.0/8"]
-  location            = azurerm_resource_group.aks_rg.location
-  resource_group_name = azurerm_resource_group.aks_rg.name
+  location            = var.location
+  resource_group_name = var.resource_group_name
 }
 
-## Subnet for AKS
+## Subnet
 resource "azurerm_subnet" "aks_subnet" {
   name                 = "aksSubnet"
-  resource_group_name  = azurerm_resource_group.aks_rg.name
+  resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.aks_vnet.name
   address_prefixes     = ["10.240.0.0/16"]
 }
 
-## Create Public IP Prefix
+## NAT Gateway Resources
 resource "azurerm_public_ip_prefix" "nat_prefix" {
   name                = "pipp-nat-gateway"
-  location            = azurerm_resource_group.aks_rg.location
-  resource_group_name = azurerm_resource_group.aks_rg.name
+  location            = var.location
+  resource_group_name = var.resource_group_name
   prefix_length       = 29
   sku                 = "Standard"
 }
 
-## Create NAT Gateway
 resource "azurerm_nat_gateway" "gw_aks" {
   name                = "natgw-aks"
-  resource_group_name = azurerm_resource_group.aks_rg.name
-  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = var.resource_group_name
+  location            = var.location
   sku_name            = "Standard"
 }
 
-## Associate NAT Gateway with Public IP Prefix
 resource "azurerm_nat_gateway_public_ip_prefix_association" "nat_ips" {
   nat_gateway_id      = azurerm_nat_gateway.gw_aks.id
   public_ip_prefix_id = azurerm_public_ip_prefix.nat_prefix.id
 }
 
-## Attach the NAT Gateway to the Subnet
 resource "azurerm_subnet_nat_gateway_association" "sn_cluster_nat_gw" {
   subnet_id      = azurerm_subnet.aks_subnet.id
   nat_gateway_id = azurerm_nat_gateway.gw_aks.id
 }
 
-## Create a Network Security Group (NSG) for AKS
+## NSG
 resource "azurerm_network_security_group" "aks_nsg" {
   name                = "aksNSG"
-  location            = azurerm_resource_group.aks_rg.location
-  resource_group_name = azurerm_resource_group.aks_rg.name
+  location            = var.location
+  resource_group_name = var.resource_group_name
 }
 
-## Allow all inbound traffic
 resource "azurerm_network_security_rule" "allow_all_inbound" {
   name                        = "AllowAllInbound"
   priority                    = 1000
@@ -108,11 +93,10 @@ resource "azurerm_network_security_rule" "allow_all_inbound" {
   destination_port_range      = "*"
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
-  resource_group_name         = azurerm_resource_group.aks_rg.name
+  resource_group_name         = var.resource_group_name
   network_security_group_name = azurerm_network_security_group.aks_nsg.name
 }
 
-## Allow all outbound traffic
 resource "azurerm_network_security_rule" "allow_all_outbound" {
   name                        = "AllowAllOutbound"
   priority                    = 1001
@@ -123,21 +107,20 @@ resource "azurerm_network_security_rule" "allow_all_outbound" {
   destination_port_range      = "*"
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
-  resource_group_name         = azurerm_resource_group.aks_rg.name
+  resource_group_name         = var.resource_group_name
   network_security_group_name = azurerm_network_security_group.aks_nsg.name
 }
 
-## Attach the NSG to the AKS Subnet
 resource "azurerm_subnet_network_security_group_association" "aks_nsg_assoc" {
   subnet_id                 = azurerm_subnet.aks_subnet.id
   network_security_group_id = azurerm_network_security_group.aks_nsg.id
 }
 
-## Azure Kubernetes Service (AKS) Cluster
+## AKS Cluster
 resource "azurerm_kubernetes_cluster" "aks" {
   name                = var.aks_cluster_name
-  location            = azurerm_resource_group.aks_rg.location
-  resource_group_name = azurerm_resource_group.aks_rg.name
+  location            = var.location
+  resource_group_name = var.resource_group_name
   dns_prefix          = "aksdns"
 
   default_node_pool {
@@ -145,6 +128,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
     node_count     = var.node_count
     vm_size        = "Standard_DS3_v2"
     vnet_subnet_id = azurerm_subnet.aks_subnet.id
+    max_pods       = 170
   }
 
   identity {
@@ -158,8 +142,11 @@ resource "azurerm_kubernetes_cluster" "aks" {
     outbound_type  = "userAssignedNATGateway"
   }
 
+  kubernetes_version = "1.32.4"
+
   tags = {
     Environment = "demo"
+    Purpose     = "POC"
   }
 
   depends_on = [
@@ -167,16 +154,15 @@ resource "azurerm_kubernetes_cluster" "aks" {
   ]
 }
 
-## Azure Container Registry (ACR)
+## Container Registry
 resource "azurerm_container_registry" "acr" {
   name                = var.acr_name
-  resource_group_name = azurerm_resource_group.aks_rg.name
-  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = var.resource_group_name
+  location            = var.location
   sku                 = "Basic"
   admin_enabled       = false
 }
 
-## Grant AKS access to ACR
 resource "azurerm_role_assignment" "aks_acr_pull" {
   principal_id         = azurerm_kubernetes_cluster.aks.kubelet_identity[0].object_id
   role_definition_name = "AcrPull"
@@ -188,18 +174,15 @@ resource "azurerm_role_assignment" "aks_acr_pull" {
   ]
 }
 
-## Output the AKS and ACR details
+## Outputs
 output "aks_cluster_name" {
-  description = "The name of the AKS cluster"
-  value       = azurerm_kubernetes_cluster.aks.name
+  value = azurerm_kubernetes_cluster.aks.name
 }
 
 output "aks_cluster_fqdn" {
-  description = "The FQDN of the AKS cluster"
-  value       = azurerm_kubernetes_cluster.aks.fqdn
+  value = azurerm_kubernetes_cluster.aks.fqdn
 }
 
 output "acr_login_server" {
-  description = "The login server of the Azure Container Registry"
-  value       = azurerm_container_registry.acr.login_server
+  value = azurerm_container_registry.acr.login_server
 }

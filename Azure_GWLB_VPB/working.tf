@@ -772,7 +772,7 @@ resource "azurerm_network_interface" "vpb_nic3" {
 resource "azurerm_network_interface_security_group_association" "vpb_nic1_nsg" {
   network_interface_id      = azurerm_network_interface.vpb_nic1.id
   network_security_group_id = azurerm_network_security_group.vpb_nsg.id
-  depends_on = [azurerm_network_interface.vpb_nic1, azurerm_network_security_group.vpb_nsg, zurerm_linux_virtual_machine.vpb_vm]
+  depends_on = [azurerm_network_interface.vpb_nic1, azurerm_network_security_group.vpb_nsg, azurerm_linux_virtual_machine.vpb_vm]
 }
 
 resource "azurerm_network_interface_security_group_association" "vpb_nic2_nsg" {
@@ -826,48 +826,57 @@ resource "azurerm_linux_virtual_machine" "vpb_vm" {
 
 # Script to install VPB
 resource "null_resource" "vpb_install" {
+  depends_on = [
+    azurerm_linux_virtual_machine.vpb_vm,
+    azurerm_network_interface.vpb_nic1
+  ]
 
-  depends_on = [azurerm_linux_virtual_machine.vpb_vm]
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = [triggers]
+  }
 
   triggers = {
-    force_reapply = timestamp() # Forces execution on every apply
+    script_checksum = filesha256("/Users/brinketu/Downloads/vpb-3.9.0-42-install-package.sh")
   }
 
-  provisioner "local-exec" {
-    command = "sleep 120"
-  }
-
+  # Upload the installer script
   provisioner "file" {
-    source      = "/Users/brinketu/Downloads/vpb-3.9.0-42-install-package.sh" 
+    source      = "/Users/brinketu/Downloads/vpb-3.9.0-42-install-package.sh"
     destination = "/home/vpb/vpb-installer.sh"
 
     connection {
       type     = "ssh"
       user     = "vpb"
       password = "Keysight!123456"
-      timeout  = "10m"
       host     = azurerm_public_ip.vpb_public_ip.ip_address
+      timeout  = "10m"
     }
   }
 
+  # Run the installer if not already done
   provisioner "remote-exec" {
     inline = [
-      "ls -l /home/vpb",                      # Debugging step: List files to confirm upload
-      "sleep 10",                             # Wait for file to be fully copied
-      "chmod +x /home/vpb/vpb-installer.sh",   # Ensure execute permissions
-      "sudo bash /home/vpb/vpb-installer.sh"   # Explicitly run with bash
+      "ls -l /home/vpb",
+      "sleep 10",
+      "if [ ! -f /home/vpb/.vpb_installed ]; then",
+      "  chmod +x /home/vpb/vpb-installer.sh",
+      "  sudo bash /home/vpb/vpb-installer.sh",
+      "  touch /home/vpb/.vpb_installed",
+      "else",
+      "  echo 'VPB already installed. Skipping...'",
+      "fi"
     ]
 
     connection {
       type     = "ssh"
       user     = "vpb"
       password = "Keysight!123456"
-      timeout  = "45m"
       host     = azurerm_public_ip.vpb_public_ip.ip_address
+      timeout  = "45m"
     }
   }
 }
-
 # Add VPB to Gateway Load Balancer backend pool
 resource "azurerm_network_interface_backend_address_pool_association" "vpb_nic2_gwlb_pool" {
   network_interface_id    = azurerm_network_interface.vpb_nic2.id
