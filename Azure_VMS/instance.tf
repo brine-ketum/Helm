@@ -16,19 +16,19 @@ provider "azurerm" {
 variable "ubuntu_vm_count" {
   description = "Number of Ubuntu VMs to create"
   type        = number
-  default     = 1
+  default     = 5
 }
 
 variable "rhel_vm_count" {
   description = "Number of RHEL VMs to create"
   type        = number
-  default     = 1
+  default     = 5
 }
 
 variable "windows_vm_count" {
   description = "Number of Windows VMs to create"
   type        = number
-  default     = 1
+  default     = 5
 }
 
 variable "windows_admin_password" {
@@ -182,6 +182,77 @@ resource "azurerm_linux_virtual_machine" "ubuntu_vm" {
   tags = {
     Name = "UbuntuVM-${count.index}"
     Env  = "Development"
+  }
+}
+
+#Ntop Tool VM
+resource "azurerm_public_ip" "ntop_tool_pip" {
+  name                = "ntopToolPublicIP"
+  location            = azurerm_resource_group.brinek_rg.location
+  resource_group_name = azurerm_resource_group.brinek_rg.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+}
+
+resource "azurerm_network_interface" "ntop_tool_nic" {
+  name                = "ntopToolNIC"
+  location            = azurerm_resource_group.brinek_rg.location
+  resource_group_name = azurerm_resource_group.brinek_rg.name
+
+  ip_configuration {
+    name                          = "ipconfig1"
+    subnet_id                     = azurerm_subnet.brinek_public_subnet.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.ntop_tool_pip.id
+  }
+}
+
+resource "azurerm_linux_virtual_machine" "ntop_tool" {
+  name                            = "ntop-tool"
+  resource_group_name             = azurerm_resource_group.brinek_rg.name
+  location                        = azurerm_resource_group.brinek_rg.location
+  size                            = "Standard_D4s_v3" # 4 vCPUs, 16 GB RAM
+  admin_username                  = "brine"
+  disable_password_authentication = true
+  network_interface_ids           = [azurerm_network_interface.ntop_tool_nic.id]
+
+  os_disk {
+    caching              = "ReadWrite"
+    disk_size_gb         = 127
+    storage_account_type = "Standard_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-focal"
+    sku       = "20_04-lts"
+    version   = "latest"
+  }
+
+  admin_ssh_key {
+    username   = "brine"
+    public_key = file("/Users/brinketu/Downloads/eks-terraform-key.pub")
+  }
+
+  custom_data = base64encode(<<-EOF
+    #!/bin/bash
+    sudo apt update
+    sudo apt install -y software-properties-common wget gnupg tcpdump
+    wget https://packages.ntop.org/apt/ntop.key
+    sudo apt-key add ntop.key
+    echo "deb https://packages.ntop.org/apt/20.04/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ntop.list
+    echo "deb https://packages.ntop.org/apt-stable/20.04/ $(lsb_release -cs) main" | sudo tee -a /etc/apt/sources.list.d/ntop.list
+    sudo apt update
+    sudo apt install -y ntopng
+    sudo systemctl enable ntopng
+    sudo systemctl start ntopng
+  EOF
+  )
+
+
+  tags = {
+    Name = "ntop-tool"
+    Role = "Monitoring"
   }
 }
 
@@ -368,6 +439,17 @@ output "ssh_command_to_rhel" {
 output "rdp_command_to_windows" {
   value = [for i in range(var.windows_vm_count) : "mstsc /v:${azurerm_public_ip.windows_pip[i].ip_address}"]
 }
+
+output "ssh_instruction_to_ntop_tool" {
+  description = "SSH command to access the ntop_tool VM"
+  value       = "ssh -i /Users/brinketu/Downloads/eks-terraform-key.pem brine@${azurerm_public_ip.ntop_tool_pip.ip_address}"
+}
+
+output "private_ip_of_ntop_tool" {
+  description = "Private IP address of the ntop_tool VM"
+  value       = azurerm_network_interface.ntop_tool_nic.private_ip_address
+}
+
 
 output "ansible_inventory" {
   value = join("\n", concat(
