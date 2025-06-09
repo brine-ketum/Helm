@@ -172,13 +172,6 @@ resource "azurerm_linux_virtual_machine" "ubuntu_vm" {
     public_key = file("/Users/brinketu/Downloads/eks-terraform-key.pub")
   }
 
-  custom_data = base64encode(<<-EOF
-    #!/bin/bash
-    sudo apt update
-    sudo apt install -y nginx
-  EOF
-  )
-
   tags = {
     Name = "UbuntuVM-${count.index}"
     Env  = "Development"
