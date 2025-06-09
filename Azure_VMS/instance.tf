@@ -149,7 +149,7 @@ resource "azurerm_linux_virtual_machine" "ubuntu_vm" {
   name                          = "UbuntuVM-${count.index}"
   resource_group_name           = azurerm_resource_group.brinek_rg.name
   location                      = azurerm_resource_group.brinek_rg.location
-  size                          = "Standard_B1s"
+  size                          = "Standard_D4s_v3" # 4 vCPUs, 16 GB RAM
   admin_username                = "brine"
   disable_password_authentication = true
   network_interface_ids         = [azurerm_network_interface.ubuntu_nic[count.index].id]
@@ -237,7 +237,7 @@ resource "azurerm_linux_virtual_machine" "ntop_tool" {
   custom_data = base64encode(<<-EOF
     #!/bin/bash
     sudo apt update
-    sudo apt install -y software-properties-common wget gnupg tcpdump
+    sudo apt install -y software-properties-common wget gnupg tcpdump net-tools
     wget https://packages.ntop.org/apt/ntop.key
     sudo apt-key add ntop.key
     echo "deb https://packages.ntop.org/apt/20.04/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ntop.list
@@ -285,7 +285,7 @@ resource "azurerm_linux_virtual_machine" "rhel_vm" {
   name                          = "RHELVM-${count.index}"
   resource_group_name           = azurerm_resource_group.brinek_rg.name
   location                      = azurerm_resource_group.brinek_rg.location
-  size                          = "Standard_D4s_v3"
+  size                          = "Standard_D4s_v3" 
   admin_username                = "brine"
   disable_password_authentication = true
   network_interface_ids         = [azurerm_network_interface.rhel_nic[count.index].id]
@@ -440,8 +440,7 @@ output "rdp_command_to_windows" {
   value = [for i in range(var.windows_vm_count) : "mstsc /v:${azurerm_public_ip.windows_pip[i].ip_address}"]
 }
 
-output "ssh_instruction_to_ntop_tool" {
-  description = "SSH command to access the ntop_tool VM"
+output "ssh_to_ntop_tool" {
   value       = "ssh -i /Users/brinketu/Downloads/eks-terraform-key.pem brine@${azurerm_public_ip.ntop_tool_pip.ip_address}"
 }
 
