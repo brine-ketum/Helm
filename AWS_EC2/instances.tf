@@ -14,12 +14,12 @@ provider "aws" {
 
 variable "ubuntu_vm_count" {
   type    = number
-  default = 1
+  default = 0
 }
 
 variable "rhel_vm_count" {
   type    = number
-  default = 1
+  default = 0
 }
 
 variable "windows_vm_count" {
@@ -29,6 +29,7 @@ variable "windows_vm_count" {
 
 variable "rhel_ami_id" {
   type    = string
+  # default = "ami-0140c344ea05bbd7a" # For us-east-1, RHEL 8.x
   default = "ami-0776d7ceda464f850" # For us-west-2, RHEL 8.x
 }
 
@@ -40,24 +41,35 @@ resource "aws_vpc" "brinek_vpc" {
   }
 }
 
-# Create Private Subnets in two Availability Zones
-resource "aws_subnet" "brinek_private_subnet_a" {
+
+resource "aws_security_group_rule" "winrm_https_inbound" {
+  type              = "ingress"
+  from_port         = 5986
+  to_port           = 5986
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.brinek_sg.id
+  description       = "Allow WinRM HTTPS"
+}
+
+# Create Public Subnets in two Availability Zones
+resource "aws_subnet" "brinek_public_subnet_a" {
   vpc_id                  = aws_vpc.brinek_vpc.id
   cidr_block              = "10.0.1.0/24"
-  availability_zone       = "us-west-2a"
-  map_public_ip_on_launch = false # IMPORTANT: Set to false
+  availability_zone       = "us-west-2a" # Changed to us-west-2a
+  map_public_ip_on_launch = true
   tags = {
-    Name = "brinekPrivateSubnetA"
+    Name = "brinekPublicSubnetA"
   }
 }
 
-resource "aws_subnet" "brinek_private_subnet_b" {
+resource "aws_subnet" "brinek_public_subnet_b" {
   vpc_id                  = aws_vpc.brinek_vpc.id
   cidr_block              = "10.0.2.0/24"
-  availability_zone       = "us-west-2b"
-  map_public_ip_on_launch = false # IMPORTANT: Set to false
+  availability_zone       = "us-west-2b" # Changed to us-west-2b
+  map_public_ip_on_launch = true
   tags = {
-    Name = "brinekPrivateSubnetB"
+    Name = "brinekPublicSubnetB"
   }
 }
 
@@ -69,95 +81,89 @@ resource "aws_internet_gateway" "brinek_igw" {
   }
 }
 
-# NAT Gateway - Required for private subnets to access the internet
-resource "aws_nat_gateway" "brinek_nat_gateway" {
-  allocation_id = aws_eip.nat_gateway_eip.id
-  subnet_id     = aws_subnet.brinek_private_subnet_a.id # Place in one of the private subnets
-  tags = {
-    Name = "BrineK_NAT_Gateway"
-  }
-
-  depends_on = [aws_internet_gateway.brinek_igw]
-}
-
-# Elastic IP for NAT Gateway
-resource "aws_eip" "nat_gateway_eip" {
-  domain = "vpc"
-  tags = {
-    Name = "BrineK_NAT_EIP"
-  }
-}
-
-# Route Table for Private Subnets
-resource "aws_route_table" "brinek_private_rt" {
+# Route Table for Public subnets
+resource "aws_route_table" "brinek_public_rt" {
   vpc_id = aws_vpc.brinek_vpc.id
   route {
     cidr_block = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.brinek_nat_gateway.id
+    gateway_id = aws_internet_gateway.brinek_igw.id
   }
   tags = {
-    Name = "brinekPrivateRT"
+    Name = "brinekPublicRT"
   }
 }
 
-resource "aws_route_table_association" "brinek_private_assoc_a" {
-  subnet_id      = aws_subnet.brinek_private_subnet_a.id
-  route_table_id = aws_route_table.brinek_private_rt.id
+resource "aws_route_table_association" "brinek_public_assoc_a" {
+  subnet_id      = aws_subnet.brinek_public_subnet_a.id
+  route_table_id = aws_route_table.brinek_public_rt.id
 }
 
-resource "aws_route_table_association" "brinek_private_assoc_b" {
-  subnet_id      = aws_subnet.brinek_private_subnet_b.id
-  route_table_id = aws_route_table.brinek_private_rt.id
+resource "aws_route_table_association" "brinek_public_assoc_b" {
+  subnet_id      = aws_subnet.brinek_public_subnet_b.id
+  route_table_id = aws_route_table.brinek_public_rt.id
 }
 
-# Security Group equivalent to NSG for private instances - REVISED
-resource "aws_security_group" "brinek_private_sg" {
-  name        = "BrineK_Private_SG"
-  description = "Security group for BrineK Private Instances"
+# Security Group equivalent to NSG
+resource "aws_security_group" "brinek_sg" {
+  name        = "BrineK_SG"
+  description = "Security group for BrineK"
   vpc_id      = aws_vpc.brinek_vpc.id
 
-  #No ingress rules - allow outbound only, restrict this further if possible
+  ingress {
+    description = "Allow SSH from specific IP"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["40.143.44.44/32"]
+  }
+
+  ingress {
+    description = "Allow RDP from specific IP"
+    from_port   = 3389
+    to_port     = 3389
+    protocol    = "tcp"
+    cidr_blocks = ["40.143.44.44/32"]
+  }
+
+  ingress {
+    description = "Allow WinRM (HTTP)"
+    from_port   = 5985
+    to_port     = 5985
+    protocol    = "tcp"
+    cidr_blocks = ["40.143.44.44/32"]
+  }
+
+  ingress {
+    description = "Allow WinRM (HTTPS)"
+    from_port   = 5986
+    to_port     = 5986
+    protocol    = "tcp"
+    cidr_blocks = ["40.143.44.44/32"]
+  }
+
+  # Add ingress rules for CloudLens Manager subnets if required
+  ingress {
+    description = "Allow CloudLens Manager Subnets"
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.2.0/24", "10.0.3.0/24"]  # Replace with actual CloudLens subnets
+  }
+
   egress {
-    description = "Allow all outbound traffic"
+    description = "Allow all outbound"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"] # Allowing all outbound; Consider restricting more
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = {
-    Name = "BrineK_Private_SG"
+    Name = "BrineK_SG"
   }
 }
 
-# IAM Role and Instance Profile for SSM
-resource "aws_iam_role" "ssm_instance_role" {
-  name = "SSMInstanceRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [{
-      Action = "sts:AssumeRole",
-      Principal = {
-        Service = "ec2.amazonaws.com"
-      },
-      Effect = "Allow",
-      Sid    = ""
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ssm_managed_policy" {
-  role       = aws_iam_role.ssm_instance_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-resource "aws_iam_instance_profile" "ssm_instance_profile" {
-  name = "SSMInstanceProfile"
-  role = aws_iam_role.ssm_instance_role.name
-}
-
-# Key Pair for SSH (still needed, but won't be used directly for SSH)
+# Key Pair for SSH
 resource "aws_key_pair" "brinek_key" {
   key_name   = "brinek_key"
   public_key = file("/Users/brinketu/Downloads/eks-terraform-key.pub")
@@ -165,21 +171,17 @@ resource "aws_key_pair" "brinek_key" {
 
 # Ubuntu EC2 Instances
 resource "aws_instance" "ubuntu_vm" {
-  count                      = var.ubuntu_vm_count
-  ami                        = data.aws_ami.ubuntu.id
-  instance_type              = "t3.large"
-  subnet_id                  = aws_subnet.brinek_private_subnet_a.id # Use private subnet A
-  key_name                   = aws_key_pair.brinek_key.key_name
-  vpc_security_group_ids     = [aws_security_group.brinek_private_sg.id] # Using the private SG
-  iam_instance_profile = aws_iam_instance_profile.ssm_instance_profile.name
-  associate_public_ip_address = false #Ensure no public IP
+  count         = var.ubuntu_vm_count
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t3.large"
+  subnet_id     = aws_subnet.brinek_public_subnet_a.id # Use subnet A
+  key_name      = aws_key_pair.brinek_key.key_name
+  vpc_security_group_ids = [aws_security_group.brinek_sg.id]
 
   user_data = <<-EOF
             #!/bin/bash
             sudo apt-get update -y
-            sudo apt-get install -y amazon-ssm-agent
-            systemctl enable amazon-ssm-agent
-            systemctl start amazon-ssm-agent
+            sudo apt-get install -y nginx
           EOF
 
   tags = {
@@ -190,25 +192,17 @@ resource "aws_instance" "ubuntu_vm" {
 
 # Redhat EC2 Instances
 resource "aws_instance" "rhel_vm" {
-  count                      = var.rhel_vm_count
-  ami                        = var.rhel_ami_id
-  instance_type              = "t3.large"
-  subnet_id                  = aws_subnet.brinek_private_subnet_a.id # Use private subnet A
-  key_name                   = aws_key_pair.brinek_key.key_name
-  vpc_security_group_ids     = [aws_security_group.brinek_private_sg.id] # Using the private SG
-  iam_instance_profile = aws_iam_instance_profile.ssm_instance_profile.name
-  associate_public_ip_address = false #Ensure no public IP
-
+  count         = var.rhel_vm_count
+  ami           = var.rhel_ami_id
+  instance_type = "t3.large"  # Updated instance type to meet CPU and memory requirements (4 vCPUs, 16 GB RAM)
+  subnet_id     = aws_subnet.brinek_public_subnet_a.id # Use subnet A
+  key_name      = aws_key_pair.brinek_key.key_name
+  vpc_security_group_ids = [
+    aws_security_group.brinek_sg.id
+  ]
   root_block_device {
-    volume_size = 20
+    volume_size = 20 
   }
-
-user_data = <<-EOF
-  #!/bin/bash
-  yum install -y amazon-ssm-agent
-  systemctl enable amazon-ssm-agent
-  systemctl start amazon-ssm-agent
-EOF
 
   tags = {
     Name = "RHELVM-${count.index}"
@@ -218,26 +212,46 @@ EOF
 
 # Windows EC2 Instances
 resource "aws_instance" "windows_vm" {
-  count                      = var.windows_vm_count
-  ami                        = data.aws_ami.windows.id
-  instance_type              = "t3.large"
-  subnet_id                  = aws_subnet.brinek_private_subnet_b.id # Use private subnet B
-  key_name                   = aws_key_pair.brinek_key.key_name
-  vpc_security_group_ids     = [aws_security_group.brinek_private_sg.id] # Using the private SG
-  iam_instance_profile = aws_iam_instance_profile.ssm_instance_profile.name
-  associate_public_ip_address = false #Ensure no public IP
+  count         = var.windows_vm_count
+  ami           = data.aws_ami.windows.id
+  instance_type = "t3.large"
+  subnet_id     = aws_subnet.brinek_public_subnet_b.id
+  key_name      = aws_key_pair.brinek_key.key_name
+  vpc_security_group_ids = [aws_security_group.brinek_sg.id]
 
-  user_data = <<-EOF
-    <powershell>
-    # (Optional) You can install or restart SSM Agent here if needed
-    </powershell>
-  EOF
+user_data = <<-EOF
+  <powershell>
+  # Enable RDP
+  Set-ItemProperty -Path "HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server" -Name "fDenyTSConnections" -Value 0
+
+  # Enable Remote Desktop firewall rule
+  Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+  # Optional: Set RDP to allow Network Level Authentication (NLA) - recommended
+  Set-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp" -Name "UserAuthentication" -Value 1
+
+  # Create a new local user 'brine' with password 'Bravedemo123.'
+  $password = ConvertTo-SecureString "Bravedemo123." -AsPlainText -Force
+  New-LocalUser "brine" -Password $password -FullName "Brine User" -Description "Custom RDP User"
+  Add-LocalGroupMember -Group "Administrators" -Member "brine"
+
+  # Optional: Restart Remote Desktop service
+  Restart-Service -Name TermService -Force
+
+  </powershell>
+EOF
+
+
+#Enable winrm on Windows after deployment 
+  # Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ansible/ansible/stable-2.9/examples/scripts/ConfigureRemotingForAnsible.ps1" -OutFile "C:\\ConfigureRemotingForAnsible.ps1"
+  # powershell -ExecutionPolicy Unrestricted -File C:\\ConfigureRemotingForAnsible.ps1
 
   tags = {
     Name = "WindowsVM-${count.index}"
     Env  = "Development"
   }
 }
+
 
 # Data sources for AMIs used in instances
 data "aws_ami" "ubuntu" {
@@ -258,38 +272,62 @@ data "aws_ami" "windows" {
     name   = "name"
     values = ["Windows_Server-2019-English-Full-Base-*"]
   }
+
 }
 
 # Outputs for access information
-output "ubuntu_instance_ids" {
-  value       = [for instance in aws_instance.ubuntu_vm : instance.id]
-  description = "Instance IDs of Ubuntu VMs"
+output "ubuntu_public_ips" {
+  value = [for i in range(length(aws_instance.ubuntu_vm)) : aws_instance.ubuntu_vm[i].public_ip]
 }
 
-output "rhel_instance_ids" {
-  value       = [for instance in aws_instance.rhel_vm : instance.id]
-  description = "Instance IDs of RHEL VMs"
+output "rhel_public_ips" {
+  value = [for i in range(length(aws_instance.rhel_vm)) : aws_instance.rhel_vm[i].public_ip]
 }
 
-output "windows_instance_ids" {
-  value       = [for instance in aws_instance.windows_vm : instance.id]
-  description = "Instance IDs of Windows VMs"
+output "rdp_commands_windows" {
+  value = [for i in range(length(aws_instance.windows_vm)) : "mstsc /v:${aws_instance.windows_vm[i].public_ip}"]
 }
 
-output "ansible_inventory_ips_only" {
-  description = "Ansible inventory using only private IPs, with group vars for Windows"
+output "windows_public_ips" {
+  value = [for i in range(length(aws_instance.windows_vm)) : aws_instance.windows_vm[i].public_ip]
+}
 
+output "ssh_instructions_ubuntu" {
+  description = "SSH command(s) for Ubuntu VMs"
+  value = [
+    for i in range(length(aws_instance.ubuntu_vm)) :
+    "ssh -i eks-terraform-key.pem ubuntu@${aws_instance.ubuntu_vm[i].public_ip}"
+  ]
+}
+
+output "ssh_instructions_rhel" {
+  description = "SSH command(s) for RHEL VMs"
+  value = [
+    for i in range(length(aws_instance.rhel_vm)) :
+    "ssh -i eks-terraform-key.pem ec2-user@${aws_instance.rhel_vm[i].public_ip}"
+  ]
+}
+
+output "ansible_inventory" {
   value = join("\n", concat(
     ["[ubuntu_vms]"],
-    [for nic in azurerm_network_interface.ubuntu_nic : nic.private_ip_address],
-
+    [for i in range(length(aws_instance.ubuntu_vm)) :
+      "ubuntu${i + 1} ansible_host=${aws_instance.ubuntu_vm[i].public_ip}"
+    ],
     ["", "[redhat_vms]"],
-    [for nic in azurerm_network_interface.rhel_nic : nic.private_ip_address],
+    [for i in range(length(aws_instance.rhel_vm)) :
+      "rhel${i + 1} ansible_host=${aws_instance.rhel_vm[i].public_ip}"
+
+    ],
 
     ["", "[windows]"],
-    [for nic in azurerm_network_interface.windows_nic : nic.private_ip_address],
+
+    [for i in range(length(aws_instance.windows_vm)) :
+      aws_instance.windows_vm[i].public_ip
+    ],
 
     ["", "[windows:vars]"],
+
     [
       "ansible_user=brine",
       "ansible_password=Bravedemo123.",
@@ -299,3 +337,13 @@ output "ansible_inventory_ips_only" {
     ]
   ))
 }
+
+#use this to generat AMIS for RHEL 8.x
+# aws ec2 describe-images \                                                                                        ─╯
+#   --owners 309956199498 \
+#   --filters "Name=name,Values=RHEL-8*HVM*x86_64*" "Name=state,Values=available" \
+#   --region us-west-2 \
+#   --query "sort_by(Images, &CreationDate)[].{Name:Name,ImageId:ImageId,Date:CreationDate}" \
+#   --output table \
+#   --profile AdministratorAccess-223117700463
+

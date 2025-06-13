@@ -6,7 +6,7 @@ terraform {
 
 variable "vpb_installer_path" {
   type    = string
-  default = "/Users/brinketu/Downloads/vpb-3.8.0-12-install-package.sh"
+  default = "/Users/brinketu/Downloads/vpb-3.9.0-42-install-package.sh"
 }
 
 variable "prefix" {

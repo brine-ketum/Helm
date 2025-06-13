@@ -16,19 +16,19 @@ provider "azurerm" {
 variable "ubuntu_vm_count" {
   description = "Number of Ubuntu VMs to create"
   type        = number
-  default     = 5
+  default     = 1
 }
 
 variable "rhel_vm_count" {
   description = "Number of RHEL VMs to create"
   type        = number
-  default     = 5
+  default     = 1
 }
 
 variable "windows_vm_count" {
   description = "Number of Windows VMs to create"
   type        = number
-  default     = 5
+  default     = 1
 }
 
 variable "windows_admin_password" {
@@ -174,7 +174,8 @@ resource "azurerm_linux_virtual_machine" "ubuntu_vm" {
 
   tags = {
     Name = "UbuntuVM-${count.index}"
-    Env  = "Development"
+    Env  = "prod"
+    OS   = "Ubuntu"
   }
 }
 
@@ -312,7 +313,8 @@ resource "azurerm_linux_virtual_machine" "rhel_vm" {
 
   tags = {
     Name = "RHELVM-${count.index}"
-    Env  = "Development"
+    Env  = "prod"
+    OS   = "RHEL"
   }
 }
 
@@ -381,7 +383,8 @@ resource "azurerm_windows_virtual_machine" "windows_vm" {
 
   tags = {
     Name = "WindowsVM-${count.index}"
-    Env  = "Development"
+    Env  = "prod"
+    OS   = "Windows"
   }
 
   depends_on = [azurerm_network_interface.windows_nic]
