@@ -16,19 +16,20 @@ provider "azurerm" {
 variable "ubuntu_vm_count" {
   description = "Number of Ubuntu VMs to create"
   type        = number
-  default     = 4
+  default     =  20 #4
 }
 
+# Max number notice for ansible playbook to run successfully TBD
 variable "rhel_vm_count" {
   description = "Number of RHEL VMs to create"
   type        = number
-  default     = 3
+  default     = 20 #3
 }
 
 variable "windows_vm_count" {
   description = "Number of Windows VMs to create"
   type        = number
-  default     = 3
+  default     = 20 #3
 }
 
 variable "windows_admin_password" {
@@ -127,7 +128,7 @@ resource "azurerm_public_ip" "ubuntu_pip" {
   location            = azurerm_resource_group.brinek_rg.location
   resource_group_name = azurerm_resource_group.brinek_rg.name
   allocation_method   = "Static"
-  sku                 = "Basic" 
+  sku                 = "Standard" 
 }
 
 resource "azurerm_network_interface" "ubuntu_nic" {
@@ -185,7 +186,7 @@ resource "azurerm_public_ip" "ntop_tool_pip" {
   location            = azurerm_resource_group.brinek_rg.location
   resource_group_name = azurerm_resource_group.brinek_rg.name
   allocation_method   = "Static"
-  sku                 = "Basic" 
+  sku                 = "Standard" 
 }
 
 resource "azurerm_network_interface" "ntop_tool_nic" {
@@ -257,7 +258,7 @@ resource "azurerm_public_ip" "rhel_pip" {
   location            = azurerm_resource_group.brinek_rg.location
   resource_group_name = azurerm_resource_group.brinek_rg.name
   allocation_method   = "Static"
-  sku                 = "Basic"
+  sku                 = "Standard"
 }
 
 resource "azurerm_network_interface" "rhel_nic" {
@@ -317,7 +318,7 @@ resource "azurerm_public_ip" "windows_pip" {
   location            = azurerm_resource_group.brinek_rg.location
   resource_group_name = azurerm_resource_group.brinek_rg.name
   allocation_method   = "Static"
-  sku                 = "Basic"
+  sku                 = "Standard"
 }
 
 resource "azurerm_network_interface" "windows_nic" {

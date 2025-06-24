@@ -186,7 +186,8 @@ resource "aws_instance" "ubuntu_vm" {
 
   tags = {
     Name = "UbuntuVM-${count.index}"
-    Env  = "Development"
+    Env  = "prod"
+    OS   = "Ubuntu"
   }
 }
 
@@ -206,7 +207,8 @@ resource "aws_instance" "rhel_vm" {
 
   tags = {
     Name = "RHELVM-${count.index}"
-    Env  = "Development"
+    Env  = "prod"
+    OS   = "redhat"
   }
 }
 
@@ -220,27 +222,54 @@ resource "aws_instance" "windows_vm" {
   vpc_security_group_ids = [aws_security_group.brinek_sg.id]
 
 user_data = <<-EOF
-  <powershell>
-  # Enable RDP
-  Set-ItemProperty -Path "HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server" -Name "fDenyTSConnections" -Value 0
+<powershell>
+# Set execution policy
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Force
 
-  # Enable Remote Desktop firewall rule
-  Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+# Enable RDP
+Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 1
 
-  # Optional: Set RDP to allow Network Level Authentication (NLA) - recommended
-  Set-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp" -Name "UserAuthentication" -Value 1
+# Create admin user with proper settings
+$password = ConvertTo-SecureString "Bravedemo123." -AsPlainText -Force
+New-LocalUser "brine" -Password $password -FullName "Brine User" -PasswordNeverExpires -ErrorAction SilentlyContinue
+Add-LocalGroupMember -Group "Administrators" -Member "brine" -ErrorAction SilentlyContinue
 
-  # Create a new local user 'brine' with password 'Bravedemo123.'
-  $password = ConvertTo-SecureString "Bravedemo123." -AsPlainText -Force
-  New-LocalUser "brine" -Password $password -FullName "Brine User" -Description "Custom RDP User"
-  Add-LocalGroupMember -Group "Administrators" -Member "brine"
+# CONFIGURE WINRM FOR ANSIBLE (This was missing!)
+try {
+    # Enable PowerShell Remoting
+    Enable-PSRemoting -Force
+    
+    # Configure WinRM
+    winrm quickconfig -quiet -transport:http
+    winrm set winrm/config/service/auth '@{Basic="true"}'
+    winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+    winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="512"}'
+    
+    # Create HTTP listener for all addresses
+    winrm delete winrm/config/listener?Address=*+Transport=HTTP -ErrorAction SilentlyContinue
+    winrm create winrm/config/listener?Address=*+Transport=HTTP
+    
+    # Configure Windows Firewall for WinRM
+    New-NetFirewallRule -DisplayName "WinRM-HTTP-In" -Direction Inbound -LocalPort 5985 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue
+    
+    # Restart WinRM service
+    Restart-Service WinRM -Force
+    
+    Write-Output "WinRM configured successfully for Ansible"
+} catch {
+    Write-Output "Error configuring WinRM: $_"
+}
 
-  # Optional: Restart Remote Desktop service
-  Restart-Service -Name TermService -Force
+# Log completion
+$logContent = "Windows configuration completed at $(Get-Date)"
+$logContent | Out-File -FilePath "C:\userdata-log.txt" -Encoding UTF8
 
-  </powershell>
+# Restart Terminal Services
+Restart-Service TermService -Force
+</powershell>
 EOF
-
 
 #Enable winrm on Windows after deployment 
   # Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ansible/ansible/stable-2.9/examples/scripts/ConfigureRemotingForAnsible.ps1" -OutFile "C:\\ConfigureRemotingForAnsible.ps1"
@@ -248,7 +277,8 @@ EOF
 
   tags = {
     Name = "WindowsVM-${count.index}"
-    Env  = "Development"
+    Env  = "prod"
+    OS   = "windows"
   }
 }
 
@@ -266,13 +296,12 @@ data "aws_ami" "ubuntu" {
 
 data "aws_ami" "windows" {
   most_recent = true
-  owners      = ["801119661308"] # Amazon Windows
+  owners      = ["801119661308"] # Amazon
 
   filter {
     name   = "name"
-    values = ["Windows_Server-2019-English-Full-Base-*"]
+    values = ["Windows_Server-2022-English-Full-Base-*"]
   }
-
 }
 
 # Outputs for access information
