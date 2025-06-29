@@ -16,20 +16,20 @@ provider "azurerm" {
 variable "ubuntu_vm_count" {
   description = "Number of Ubuntu VMs to create"
   type        = number
-  default     =  20 #4
+  default     =  1 #4
 }
 
 # Max number notice for ansible playbook to run successfully TBD
 variable "rhel_vm_count" {
   description = "Number of RHEL VMs to create"
   type        = number
-  default     = 20 #3
+  default     = 1 #3
 }
 
 variable "windows_vm_count" {
   description = "Number of Windows VMs to create"
   type        = number
-  default     = 20 #3
+  default     = 2 #3
 }
 
 variable "windows_admin_password" {

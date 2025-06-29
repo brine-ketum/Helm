@@ -16,7 +16,7 @@ provider "google" {
 
 variable "ubuntu_vm_count" {
   type    = number
-  default = 3
+  default = 1
 }
 
 variable "rhel_vm_count" {
@@ -135,11 +135,6 @@ resource "google_compute_firewall" "brinek_https_icmp" {
 
 # Ubuntu VM Startup Script
 locals {
-  ubuntu_startup_script = <<-EOF
-    #!/bin/bash
-    sudo apt-get update -y
-    sudo apt-get install -y nginx
-  EOF
 
   windows_startup_script = <<-EOF
     <powershell>
@@ -218,8 +213,6 @@ resource "google_compute_instance" "ubuntu_vm" {
     ssh-keys = "brinendamketum:${file("~/.ssh/gcp-key.pub")}"
   }
 
-  metadata_startup_script = local.ubuntu_startup_script
-
   tags = ["brinek-vm"]
 
   labels = {
@@ -264,6 +257,7 @@ resource "google_compute_instance" "rhel_vm" {
   }
 }
 
+#CLMS 
 resource "google_compute_instance" "clms_vm" {
   name         = "clms-vm"
   machine_type = "n2-standard-8"  # 8 vCPUs, 32 GB RAM
