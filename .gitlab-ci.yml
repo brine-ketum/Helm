@@ -5,5 +5,4 @@ aws-auth:
   stage: aws-check
   image: amazon/aws-cli
   script:
-    - echo "✅ Verifying AWS authentication..."
     - aws sts get-caller-identity
