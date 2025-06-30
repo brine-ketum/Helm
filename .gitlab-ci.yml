@@ -1,9 +1,8 @@
-gcp-auth-check:
-  stage: test
-  image: google/cloud-sdk:slim
+stages:
+  - aws-auth
+
+aws-auth:
+  stage: aws-auth
+  image: amazon/aws-cli
   script:
-    - echo "$GCP_SERVICE_ACCOUNT_KEY_B64" | base64 -d > gcp-key.json
-    - gcloud auth activate-service-account --key-file=gcp-key.json
-    - gcloud config set project poc-project-463913
-    - gcloud auth list
-    - gcloud projects describe poc-project-463913
+    - aws sts get-caller-identity
