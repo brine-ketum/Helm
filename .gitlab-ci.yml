@@ -5,8 +5,6 @@ aws-login:
   stage: aws-auth
   image: amazon/aws-cli
   script:
-    # Show current AWS identity
+    - echo "Testing AWS authentication..."
     - aws sts get-caller-identity
-
-    # OPTIONAL: List S3 buckets (as a demo)
-    - aws s3 ls
+    - aws s3 ls || true  # Prevent error if no buckets exist
