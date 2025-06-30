@@ -1,10 +1,8 @@
 stages:
-  - aws-auth
+  - test
 
-aws-auth:
-  stage: aws-auth
-  image: amazon/aws-cli
-  variables:
-    AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+hello-world:
+  stage: test
+  image: alpine
   script:
-    - aws sts get-caller-identity
+    - echo "🎉 GitLab CI is working!"
