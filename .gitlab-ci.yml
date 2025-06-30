@@ -4,6 +4,7 @@ stages:
 aws-auth:
   stage: aws-auth
   image: amazon/aws-cli
+  variables:
+    AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
   script:
-    - echo "Testing AWS credentials..."
     - aws sts get-caller-identity
