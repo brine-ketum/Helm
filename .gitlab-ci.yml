@@ -2,7 +2,7 @@ gcp-auth-check:
   stage: test
   image: google/cloud-sdk:slim
   script:
-    - echo "$GCP_SERVICE_ACCOUNT_KEY" > gcp-key.json
+    - echo "$GCP_SERVICE_ACCOUNT_KEY_B64" | base64 -d > gcp-key.json
     - gcloud auth activate-service-account --key-file=gcp-key.json
     - gcloud config set project poc-project-463913
     - gcloud auth list
