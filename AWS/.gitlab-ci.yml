@@ -1,0 +1,12 @@
+stages:
+  - aws-auth
+
+aws-login:
+  stage: aws-auth
+  image: amazon/aws-cli
+  script:
+    # Show current AWS identity
+    - aws sts get-caller-identity
+
+    # OPTIONAL: List S3 buckets (as a demo)
+    - aws s3 ls
