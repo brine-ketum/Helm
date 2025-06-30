@@ -1,7 +1,9 @@
-azure-auth-check:
+gcp-auth-check:
   stage: test
-  image: mcr.microsoft.com/azure-cli
+  image: google/cloud-sdk:slim
   script:
-    - echo "Logging in to Azure..."
-    - az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
-    - az account show
+    - echo "$GCP_SERVICE_ACCOUNT_KEY" > gcp-key.json
+    - gcloud auth activate-service-account --key-file=gcp-key.json
+    - gcloud config set project poc-project-463913
+    - gcloud auth list
+    - gcloud projects describe poc-project-463913
