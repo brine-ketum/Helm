@@ -1,8 +1,7 @@
-stages:
-  - aws-check
-
-aws-auth:
-  stage: aws-check
-  image: amazon/aws-cli
+azure-auth-check:
+  stage: test
+  image: mcr.microsoft.com/azure-cli
   script:
-    - aws sts get-caller-identity
+    - echo "Logging in to Azure..."
+    - az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
+    - az account show
