@@ -1,10 +1,9 @@
 stages:
-  - aws-auth
+  - aws-check
 
-aws-login:
-  stage: aws-auth
+aws-auth:
+  stage: aws-check
   image: amazon/aws-cli
   script:
-    - echo "Testing AWS authentication..."
+    - echo "✅ Verifying AWS authentication..."
     - aws sts get-caller-identity
-    - aws s3 ls || true  # Prevent error if no buckets exist
