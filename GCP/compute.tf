@@ -287,8 +287,7 @@ resource "google_compute_instance" "clms_vm" {
   labels = {
     name = "clms"
     role = "cloudlens-manager"
-    env  = "prod"
-    os   = "ubuntu"
+
   }
 }
 
