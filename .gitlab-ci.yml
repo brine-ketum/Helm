@@ -5,6 +5,5 @@ test-aws-credentials:
   stage: test
   image: amazon/aws-cli:latest
   script:
-    # Test AWS credentials
     - echo "Testing AWS credentials..."
     - aws sts get-caller-identity
