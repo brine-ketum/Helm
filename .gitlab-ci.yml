@@ -2,7 +2,8 @@ stages:
   - aws-auth
 
 aws-auth:
-  stage: aws-auth
+  stage: test
   image: amazon/aws-cli
   script:
+    - echo "Testing AWS CLI access..."
     - aws sts get-caller-identity
