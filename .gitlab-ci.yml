@@ -1,8 +1,8 @@
 stages:
-  - test
+  - aws-auth
 
-hello-world:
-  stage: test
-  image: alpine
+aws-auth:
+  stage: aws-auth
+  image: amazon/aws-cli
   script:
-    - echo "🎉 GitLab CI is working!"
+    - aws sts get-caller-identity
