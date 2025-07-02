@@ -26,7 +26,7 @@ variable "rhel_vm_count" {
 
 variable "windows_vm_count" {
   type    = number
-  default = 1
+  default = 0
 }
 
 # Create VPC Network
@@ -116,7 +116,6 @@ resource "google_compute_firewall" "brinek_egress" {
   target_tags        = ["brinek-vm"]
 }
 
-
 resource "google_compute_firewall" "brinek_https_icmp" {
   name    = "brinek-allow-https-icmp"
   network = google_compute_network.brinek_vpc.name
@@ -133,9 +132,8 @@ resource "google_compute_firewall" "brinek_https_icmp" {
   source_ranges = ["0.0.0.0/0"]  # Or restrict to a specific range
 }
 
-# Ubuntu VM Startup Script
+# Windows VM Startup Script
 locals {
-
   windows_startup_script = <<-EOF
     <powershell>
     # Set execution policy
@@ -210,7 +208,7 @@ resource "google_compute_instance" "ubuntu_vm" {
   }
 
   metadata = {
-    ssh-keys = "brinendamketum:${file("~/.ssh/gcp-key.pub")}"
+    ssh-keys = "brinendamketum:${file("/Users/brinketu/Downloads/ssh_key.pub")}"
   }
 
   tags = ["brinek-vm"]
@@ -245,7 +243,7 @@ resource "google_compute_instance" "rhel_vm" {
   }
 
   metadata = {
-    ssh-keys = "brinendamketum:${file("~/.ssh/gcp-key.pub")}"
+    ssh-keys = "brinendamketum:${file("/Users/brinketu/Downloads/ssh_key.pub")}"
   }
 
   tags = ["brinek-vm"]
@@ -279,7 +277,7 @@ resource "google_compute_instance" "clms_vm" {
   }
 
   metadata = {
-    ssh-keys = "brinendamketum:${file("~/.ssh/gcp-key.pub")}"
+    ssh-keys = "brinendamketum:${file("/Users/brinketu/Downloads/ssh_key.pub")}"
   }
 
   tags = ["brinek-vm", "clms"]
@@ -287,7 +285,6 @@ resource "google_compute_instance" "clms_vm" {
   labels = {
     name = "clms"
     role = "cloudlens-manager"
-
   }
 }
 
@@ -343,11 +340,12 @@ output "rdp_commands_windows" {
   value = [for i in range(length(google_compute_instance.windows_vm)) : "mstsc /v:${google_compute_instance.windows_vm[i].network_interface[0].access_config[0].nat_ip}"]
 }
 
+# IMPORTANT: Update the private key path in SSH instructions to match your actual private key location
 output "ssh_instructions_ubuntu" {
   description = "SSH command(s) for Ubuntu VMs"
   value = [
     for i in range(length(google_compute_instance.ubuntu_vm)) :
-    "ssh -i ~/.ssh/gcp-key brinendamketum@${google_compute_instance.ubuntu_vm[i].network_interface[0].access_config[0].nat_ip}"
+    "ssh -i /Users/brinketu/Downloads/brinendamketum@gmail.com-2025-06-29T13_25_39.809Z.pem brinendamketum@${google_compute_instance.ubuntu_vm[i].network_interface[0].access_config[0].nat_ip}"
   ]
 }
 
@@ -355,13 +353,13 @@ output "ssh_instructions_rhel" {
   description = "SSH command(s) for RHEL VMs"
   value = [
     for i in range(length(google_compute_instance.rhel_vm)) :
-    "ssh -i ~/.ssh/gcp-key brinendamketum@${google_compute_instance.rhel_vm[i].network_interface[0].access_config[0].nat_ip}"
+    "ssh -i /Users/brinketu/Downloads/brinendamketum@gmail.com-2025-06-29T13_25_39.809Z.pem brinendamketum@${google_compute_instance.rhel_vm[i].network_interface[0].access_config[0].nat_ip}"
   ]
 }
 
 output "ssh_instructions_clms" {
   description = "SSH command for CLMS VM"
-  value       = "ssh -i ~/.ssh/gcp-key brinendamketum@${google_compute_instance.clms_vm.network_interface[0].access_config[0].nat_ip}"
+  value       = "ssh -i /Users/brinketu/Downloads/brinendamketum@gmail.com-2025-06-29T13_25_39.809Z.pem brinendamketum@${google_compute_instance.clms_vm.network_interface[0].access_config[0].nat_ip}"
 }
 
 output "clms_vm_public_ip" {
@@ -392,12 +390,12 @@ output "ansible_inventory" {
     ],
     ["", "[ubuntu_vms:vars]"],
     [
-      "ansible_ssh_private_key_file=~/.ssh/gcp-key",
+      "ansible_ssh_private_key_file=/Users/brinketu/Downloads/brinendamketum@gmail.com-2025-06-29T13_25_39.809Z.pem",
       "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
     ],
     ["", "[redhat_vms:vars]"],
     [
-      "ansible_ssh_private_key_file=~/.ssh/gcp-key",
+      "ansible_ssh_private_key_file=/Users/brinketu/Downloads/brinendamketum@gmail.com-2025-06-29T13_25_39.809Z.pem",
       "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
     ]
   ))
