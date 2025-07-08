@@ -1,392 +1,610 @@
-# 🚀 NGINX CloudLens Helm Chart for OpenShift
+# 🚀 Azure Red Hat OpenShift (ARO) Cluster Deployment with Terraform
 
-A production-ready Helm chart that deploys NGINX with a beautiful custom welcome page across all worker nodes in your OpenShift cluster.
+Complete guide for deploying a production-ready OpenShift cluster on Azure using Terraform, including all fixes and configurations that made it work.
 
-![Status](https://img.shields.io/badge/Status-Production%20Ready-green)
-![OpenShift](https://img.shields.io/badge/OpenShift-4.x-red)
-![Helm](https://img.shields.io/badge/Helm-3.x-blue)
+![OpenShift](https://img.shields.io/badge/OpenShift-4.17.27-red)
+![Azure](https://img.shields.io/badge/Azure-ARO-blue)
+![Terraform](https://img.shields.io/badge/Terraform-1.0+-purple)
+![Status](https://img.shields.io/badge/Status-Production-green)
 
 ## 📋 Table of Contents
 - [Overview](#overview)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [What Makes It Work](#what-makes-it-work)
 - [Architecture](#architecture)
-- [File Structure](#file-structure)
-- [Deployment Guide](#deployment-guide)
+- [Prerequisites](#prerequisites)
+- [Critical Fixes That Made It Work](#critical-fixes-that-made-it-work)
+- [Project Structure](#project-structure)
+- [Step-by-Step Deployment Guide](#step-by-step-deployment-guide)
+- [Configuration Details](#configuration-details)
 - [Troubleshooting](#troubleshooting)
-- [Customization](#customization)
-- [Security Considerations](#security-considerations)
+- [Post-Deployment](#post-deployment)
+- [Cleanup](#cleanup)
 
 ## 🌟 Overview
 
-This Helm chart deploys:
-- **9 NGINX pods** (3 per worker node) using DaemonSets
-- **Beautiful animated welcome page** with gradient backgrounds and particle effects
-- **Dual protocol support** (HTTP and HTTPS) without redirects
-- **Full OpenShift integration** with Routes, SCCs, and proper security contexts
+This project deploys a production-ready Azure Red Hat OpenShift (ARO) cluster with:
+- **6 Nodes Total**: 3 Master nodes + 3 Worker nodes
+- **High Availability**: Multi-zone deployment across 3 availability zones
+- **Fully Managed**: Azure manages the control plane
+- **Integrated Services**: Container Registry, Key Vault, Storage, Monitoring
+- **Network Security**: Private subnets, NSGs, and service endpoints
 
-## ✨ Features
-
-### Visual Features
-- 🎨 **Animated rainbow text** saying "Welcome to Keysight OpenShift Cluster"
-- 🌈 **Purple gradient background** with floating particles
-- 💫 **Pulsing logo** with gradient effects
-- 📊 **Live pod information** display with glassmorphism effect
-
-### Technical Features
-- ⚡ **DaemonSet deployment** - Ensures exactly 3 pods per worker node
-- 🔒 **Security Context Constraints** - Properly configured for OpenShift
-- 📡 **Dual protocol access** - Both HTTP and HTTPS work independently
-- 📊 **Prometheus metrics** - Via nginx-exporter sidecar
-- 🔄 **Health checks** - Liveness and readiness probes
-- 🛡️ **Network policies** - Secure pod communication
-
-## 📦 Prerequisites
-
-```bash
-# 1. OpenShift 4.x cluster
-oc version
-
-# 2. Helm 3.x installed
-helm version
-
-# 3. Logged into OpenShift
-oc login https://api.your-cluster.com:6443
-oc whoami
-
-# 4. Sufficient permissions
-oc auth can-i create namespace
-oc auth can-i create securitycontextconstraints
-```
-
-## 🚀 Quick Start
-
-```bash
-# Clone or download the Helm chart
-cd nginx-cloudlens/
-
-# Deploy with one command
-helm upgrade --install nginx-cloudlens . \
-  --create-namespace \
-  --namespace cloudlens \
-  --wait \
-  --timeout 10m
-
-# Get the URL
-echo "Access at: http://$(oc get route nginx-cloudlens -n cloudlens -o jsonpath='{.spec.host}')"
-```
-
-## 🔧 What Makes It Work
-
-### 1. **Security Context Fix** ⚡
-The biggest challenge was OpenShift's Security Context Constraints (SCCs).
-
-**Problem**: Pods tried to run as user 1001, but OpenShift requires UIDs in range [1000770000, 1000779999]
-
-**Solution**: Grant the service account permission to use `anyuid` SCC:
-```bash
-oc adm policy add-scc-to-user anyuid -z nginx-cloudlens -n cloudlens
-```
-
-### 2. **Route Configuration Fix** 🌐
-**Problem**: Initial route pointed to port 8443 with edge termination, causing "400 Bad Request"
-
-**Solution**: Point route to port 8080 with `insecureEdgeTerminationPolicy: Allow`:
-```yaml
-spec:
-  port:
-    targetPort: 8080  # Changed from 8443
-  tls:
-    termination: edge
-    insecureEdgeTerminationPolicy: Allow  # Changed from Redirect
-```
-
-### 3. **Namespace Management Fix** 📁
-**Problem**: Helm namespace creation conflicts
-
-**Solution**: Use `--create-namespace` flag and let Helm manage it:
-```bash
-helm install nginx-cloudlens . --create-namespace --namespace cloudlens
-```
-
-### 4. **DaemonSet Node Selector** 🖥️
-**Key**: DaemonSets use proper node selector to target only worker nodes:
-```yaml
-nodeSelector:
-  node-role.kubernetes.io/worker: ""
-```
+### Deployed Resources
+- ✅ Azure Red Hat OpenShift Cluster (ARO)
+- ✅ Virtual Network with Master/Worker Subnets
+- ✅ Azure Container Registry (Premium)
+- ✅ Key Vault for Secrets
+- ✅ Log Analytics Workspace
+- ✅ Storage Account for Registry
+- ✅ Network Security Groups
+- ✅ Service Principal with proper permissions
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     OpenShift Cluster                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │  Worker 1   │  │  Worker 2   │  │  Worker 3   │         │
-│  │             │  │             │  │             │         │
-│  │ ┌─────────┐ │  │ ┌─────────┐ │  │ ┌─────────┐ │         │
-│  │ │DaemonSet│ │  │ │DaemonSet│ │  │ │DaemonSet│ │         │
-│  │ │    0    │ │  │ │    0    │ │  │ │    0    │ │         │
-│  │ └─────────┘ │  │ └─────────┘ │  │ └─────────┘ │         │
-│  │ ┌─────────┐ │  │ ┌─────────┐ │  │ ┌─────────┐ │         │
-│  │ │DaemonSet│ │  │ │DaemonSet│ │  │ │DaemonSet│ │         │
-│  │ │    1    │ │  │ │    1    │ │  │ │    1    │ │         │
-│  │ └─────────┘ │  │ └─────────┘ │  │ └─────────┘ │         │
-│  │ ┌─────────┐ │  │ ┌─────────┐ │  │ ┌─────────┐ │         │
-│  │ │DaemonSet│ │  │ │DaemonSet│ │  │ │DaemonSet│ │         │
-│  │ │    2    │ │  │ │    2    │ │  │ │    2    │ │         │
-│  │ └─────────┘ │  │ └─────────┘ │  │ └─────────┘ │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-│                                                              │
-│  ┌────────────────────────────────────────────────┐         │
-│  │               Service (LoadBalancer)            │         │
-│  └────────────────────────────────────────────────┘         │
-│                          │                                   │
-│  ┌────────────────────────────────────────────────┐         │
-│  │                  OpenShift Route                │         │
-│  │  http://nginx-cloudlens.apps.cluster.com       │         │
-│  │  https://nginx-cloudlens.apps.cluster.com      │         │
-│  └────────────────────────────────────────────────┘         │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Azure Subscription                        │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │           Resource Group: ${PROJECT_NAME}-prod-rg       │   │
+│  ├─────────────────────────────────────────────────────────┤   │
+│  │                                                          │   │
+│  │  ┌─────────────── Virtual Network ──────────────┐       │   │
+│  │  │       VNet: ${PROJECT_NAME}-vnet (10.0.0.0/16)│       │   │
+│  │  │                                               │       │   │
+│  │  │  ┌──────── Master Subnet ────────┐           │       │   │
+│  │  │  │    10.0.0.0/23 (512 IPs)      │           │       │   │
+│  │  │  │  ┌────┐  ┌────┐  ┌────┐      │           │       │   │
+│  │  │  │  │ M1 │  │ M2 │  │ M3 │      │           │       │   │
+│  │  │  │  └────┘  └────┘  └────┘      │           │       │   │
+│  │  │  │   Zone1   Zone2   Zone3       │           │       │   │
+│  │  │  └───────────────────────────────┘           │       │   │
+│  │  │                                               │       │   │
+│  │  │  ┌──────── Worker Subnet ────────┐           │       │   │
+│  │  │  │    10.0.2.0/23 (512 IPs)      │           │       │   │
+│  │  │  │  ┌────┐  ┌────┐  ┌────┐      │           │       │   │
+│  │  │  │  │ W1 │  │ W2 │  │ W3 │      │           │       │   │
+│  │  │  │  └────┘  └────┘  └────┘      │           │       │   │
+│  │  │  │   Zone1   Zone2   Zone3       │           │       │   │
+│  │  │  └───────────────────────────────┘           │       │   │
+│  │  └───────────────────────────────────────────────┘       │   │
+│  │                                                          │   │
+│  │  ┌─────────────── Supporting Services ──────────────┐    │   │
+│  │  │                                                  │    │   │
+│  │  │  🔐 Key Vault: ${PROJECT_NAME}-prod-kvXXXX       │    │   │
+│  │  │  📦 ACR: ${PROJECT_NAME}registryXXXX (Premium)   │    │   │
+│  │  │  💾 Storage: ${PROJECT_NAME}prodregXXXX          │    │   │
+│  │  │  📊 Log Analytics: ${PROJECT_NAME}-prod-logs     │    │   │
+│  │  │  🔒 NSG: ${PROJECT_NAME}-nsg                     │    │   │
+│  │  └─────────────────────────────────────────────────┘    │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## 📁 File Structure
+## 📋 Prerequisites
 
-```
-nginx-cloudlens/
-├── Chart.yaml                    # Helm chart metadata
-├── values.yaml                   # Default configuration values
-├── templates/
-│   ├── _helpers.tpl             # Template helper functions
-│   ├── configmap.yaml           # 🎨 Contains the beautiful HTML/CSS/JS
-│   ├── deployment.yaml          # Creates 3 DaemonSets
-│   ├── service.yaml             # LoadBalancer service
-│   ├── route.yaml               # OpenShift Route for ingress
-│   ├── serviceaccount.yaml      # SA + SecurityContextConstraints
-│   ├── networkpolicy.yaml       # Network security rules
-│   ├── poddisruptionbudget.yaml # High availability settings
-│   └── servicemonitor.yaml      # Prometheus monitoring
-└── README.md                    # This file
-```
-
-### Key Files Explained
-
-#### `templates/configmap.yaml` - The Magic ✨
-Contains the entire custom HTML page with:
-- **CSS animations** for gradient backgrounds and rainbow text
-- **JavaScript** for floating particles
-- **Dynamic content** showing pod/node information
-
-#### `templates/deployment.yaml` - The Workload 🏃
-- Creates 3 DaemonSets (nginx-cloudlens-0, nginx-cloudlens-1, nginx-cloudlens-2)
-- Each DaemonSet runs on all worker nodes
-- Includes init containers for HTML setup and TLS certificate generation
-
-#### `templates/route.yaml` - The Access Point 🌐
-- Creates OpenShift Route for external access
-- Configured for both HTTP and HTTPS without redirects
-- Edge TLS termination with `insecureEdgeTerminationPolicy: Allow`
-
-## 📝 Deployment Guide
-
-### Step 1: Prepare Environment
+### 1. **Azure CLI & Login**
 ```bash
-# Verify you're in the correct cluster
-oc cluster-info
-oc get nodes
+# Install Azure CLI
+brew install azure-cli  # macOS
+# or
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash  # Linux
 
-# Check available worker nodes
-oc get nodes -l node-role.kubernetes.io/worker
+# Login to Azure
+az login
+az account show
+
+# Set subscription
+az account set --subscription "YOUR_SUBSCRIPTION_ID"
 ```
 
-### Step 2: Configure Values (Optional)
-Edit `values.yaml` if needed:
-```yaml
-namespace: cloudlens              # Target namespace
-deployment:
-  podsPerNode: 3                 # Pods per worker node
-service:
-  type: LoadBalancer             # Service type
-route:
-  host: nginx-cloudlens.apps.your-cluster.com  # Your route
-```
-
-### Step 3: Deploy the Chart
+### 2. **Terraform**
 ```bash
-# Full deployment command with all options
-helm upgrade --install nginx-cloudlens . \
-  --create-namespace \
-  --namespace cloudlens \
-  --wait \
-  --timeout 10m \
-  --debug
+# Install Terraform
+brew install terraform  # macOS
 
-# If namespace already exists
-helm upgrade --install nginx-cloudlens . \
-  --namespace cloudlens \
-  --wait
+# Verify version (need 1.0+)
+terraform version
 ```
 
-### Step 4: Grant Security Permissions
+### 3. **OpenShift CLI**
 ```bash
-# This is CRITICAL - without this, pods won't start
-oc adm policy add-scc-to-user anyuid -z nginx-cloudlens -n cloudlens
+# Install oc CLI
+brew install openshift-cli
+
+# Verify
+oc version
 ```
 
-### Step 5: Verify Deployment
+### 4. **Red Hat Pull Secret**
+Get from: https://console.redhat.com/openshift/install/azure/aro-provisioned
+Save as pull-secret.txt
+
+### 5. **Azure Subscription Requirements**
+- Azure subscription with sufficient quota
+- Minimum required vCPUs: 44 for StandardDSv3Family
+
+## 🔧 Critical Fixes That Made It Work
+
+### 1. **Azure Quota Issue** ⚡
+**Problem**: "Resource quota of standardDSv3Family exceeded. Maximum allowed: 10, Current in use: 2, Additional requested: 44"
+
+**Solution**: Request quota increase
 ```bash
-# Check pods (should see 9 total - 3 per worker)
-oc get pods -n cloudlens
+# Check current quota
+az vm list-usage --location "${AZURE_REGION}" --query "[?name.value=='standardDSv3Family']" -o table
 
-# Check DaemonSets
-oc get daemonsets -n cloudlens
-
-# Check services
-oc get svc -n cloudlens
-
-# Check route
-oc get route -n cloudlens
+# Request increase via Azure Portal
+# Portal → Subscriptions → Usage + quotas → Request Increase
+# Family: StandardDSv3Family
+# New limit: 50+
 ```
 
-### Step 6: Access the Application
-```bash
-# Get the URL
-ROUTE_URL=$(oc get route nginx-cloudlens -n cloudlens -o jsonpath='{.spec.host}')
-echo "HTTP:  http://$ROUTE_URL"
-echo "HTTPS: https://$ROUTE_URL"
+### 2. **Service Principal Issues** 🔑
+**Problem**: "PrincipalNotFound" error when assigning roles
 
-# Open in browser (macOS)
-open "http://$ROUTE_URL"
+**Solution**: Add principal_type and time delay
+```hcl
+resource "azurerm_role_assignment" "example" {
+  scope                = azurerm_resource_group.main.id
+  role_definition_name = "Contributor"
+  principal_id         = azuread_service_principal.sp.object_id
+  principal_type       = "ServicePrincipal"  # CRITICAL!
+}
+
+# Add delay for AD replication
+resource "time_sleep" "wait_for_sp_propagation" {
+  depends_on      = [azuread_service_principal.sp]
+  create_duration = "60s"
+}
+```
+
+### 3. **ARO Resource Provider Permissions** 🛡️
+**Problem**: "The resource provider service principal does not have Network Contributor role on vnet"
+
+**Solution**: Grant permissions to ARO service principal
+```bash
+# Grant Network Contributor to ARO SP
+az role assignment create \
+  --assignee "f1dd0a37-89c6-4e07-bcd1-ffd3d43d8875" \
+  --role "Network Contributor" \
+  --scope "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/virtualNetworks/${VNET_NAME}"
+```
+
+### 4. **Terraform Import Issues** 📦
+**Problem**: "A resource with the ID already exists"
+
+**Solution**: Import existing resources
+```bash
+terraform import module.openshift.azurerm_redhat_openshift_cluster.main /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.RedHatOpenShift/openShiftClusters/${CLUSTER_NAME}
+```
+
+## 📁 Project Structure
+
+```
+terraform-openshift-azure/
+├── environments/
+│   └── prod/
+│       ├── main.tf                 # Main configuration
+│       ├── variables.tf            # Variable definitions
+│       ├── outputs.tf              # Output values
+│       ├── terraform.tfvars        # Environment-specific values
+│       └── backend.tf              # State backend config
+├── modules/
+│   ├── networking/                 # VNet, Subnets, NSGs
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── openshift/                  # ARO cluster
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── registry/                   # Azure Container Registry
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── security/                   # NSGs and rules
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   └── service-principal/          # Service Principal
+│       ├── main.tf
+│       ├── variables.tf
+│       └── outputs.tf
+└── README.md
+```
+
+## 📝 Step-by-Step Deployment Guide
+
+### Step 1: Clone and Prepare
+```bash
+# Clone the repository
+git clone https://github.com/YOUR_USERNAME/terraform-openshift-azure
+cd terraform-openshift-azure/environments/prod
+
+# Copy example files
+cp terraform.tfvars.example terraform.tfvars
+```
+
+### Step 2: Configure terraform.tfvars
+```hcl
+# environments/prod/terraform.tfvars
+subscription_id     = "YOUR_SUBSCRIPTION_ID"
+location           = "westus2"
+name_prefix        = "mycompany"  # Replace with your company/project name
+
+# OpenShift Configuration
+openshift_version  = "4.17.27"
+openshift_pull_secret = file("./pull-secret.txt")
+
+# VM Sizes
+master_vm_size     = "Standard_D8s_v3"  # 8 vCPUs x 3 = 24 vCPUs
+worker_vm_size     = "Standard_D4s_v3"  # 4 vCPUs x 3 = 12 vCPUs
+worker_node_count  = 3
+
+# Network
+api_server_visibility = "Public"
+ingress_visibility    = "Public"
+api_server_authorized_ip_ranges = [
+  "YOUR_PUBLIC_IP/32",  # Replace with your IP
+  "10.0.0.0/8"         # VNet Internal
+]
+```
+
+### Step 3: Initialize Terraform
+```bash
+# Initialize Terraform
+terraform init
+
+# Validate configuration
+terraform validate
+
+# Plan deployment
+terraform plan
+```
+
+### Step 4: Pre-deployment Checks
+```bash
+# Check Azure quota
+az vm list-usage --location "westus2" --query "[?name.value=='standardDSv3Family']" -o table
+
+# Ensure quota is sufficient (need 44+ vCPUs)
+```
+
+### Step 5: Grant ARO Permissions
+```bash
+# This is CRITICAL - grant permissions before deployment
+az ad sp list --display-name "Azure Red Hat OpenShift RP" --query "[0].appId" -o tsv
+
+# Use the app ID (f1dd0a37-89c6-4e07-bcd1-ffd3d43d8875) to grant permissions
+# This will be done by Terraform if configured properly
+```
+
+### Step 6: Deploy Infrastructure
+```bash
+# Deploy in stages for better control
+
+# 1. Deploy base infrastructure first
+terraform apply -target=azurerm_resource_group.main -auto-approve
+terraform apply -target=module.networking -auto-approve
+
+# 2. Deploy service principal and permissions
+terraform apply -target=module.service_principal -auto-approve
+terraform apply -target=azurerm_role_assignment.openshift_sp_network_contributor -auto-approve
+
+# 3. Grant ARO permissions (if not in Terraform)
+az role assignment create \
+  --assignee "f1dd0a37-89c6-4e07-bcd1-ffd3d43d8875" \
+  --role "Network Contributor" \
+  --scope "$(terraform output -raw vnet_id)"
+
+# 4. Deploy supporting services
+terraform apply -target=module.registry -auto-approve
+terraform apply -target=azurerm_key_vault.main -auto-approve
+
+# 5. Finally, deploy OpenShift (takes 30-45 minutes)
+terraform apply -auto-approve
+```
+
+### Step 7: Monitor Deployment
+```bash
+# Watch cluster status (in another terminal)
+while true; do
+  clear
+  echo "=== ARO Cluster Status ==="
+  az aro show --name ${PROJECT_NAME}-aro-prod --resource-group ${PROJECT_NAME}-prod-rg \
+    --query '{State:provisioningState, URL:consoleProfile.url}' -o table
+  sleep 30
+done
+```
+
+### Step 8: Get Credentials
+```bash
+# Get cluster credentials
+az aro list-credentials \
+  --name ${PROJECT_NAME}-aro-prod \
+  --resource-group ${PROJECT_NAME}-prod-rg
+
+# Get console URL
+terraform output openshift_console_url
+
+# Login via CLI
+API_URL=$(terraform output -raw openshift_api_server_url)
+PASSWORD=$(terraform output -raw openshift_console_password)
+oc login $API_URL -u kubeadmin -p $PASSWORD
+```
+
+## ⚙️ Configuration Details
+
+### main.tf Key Components
+```hcl
+# Resource Group
+resource "azurerm_resource_group" "main" {
+  name     = "${var.name_prefix}-${local.environment}-rg"
+  location = var.location
+  tags     = local.common_tags
+}
+
+# Networking Module
+module "networking" {
+  source = "../../modules/networking"
+  
+  vnet_address_space = ["10.0.0.0/16"]
+  subnets = {
+    "${local.master_subnet_name}" = {
+      address_prefixes = ["10.0.0.0/23"]  # /23 required for masters
+      service_endpoints = ["Microsoft.Storage", "Microsoft.ContainerRegistry"]
+    }
+    "${local.worker_subnet_name}" = {
+      address_prefixes = ["10.0.2.0/23"]  # /23 required for workers
+    }
+  }
+}
+
+# Critical: ARO Service Principal Permissions
+data "azuread_service_principal" "aro" {
+  client_id = "f1dd0a37-89c6-4e07-bcd1-ffd3d43d8875"
+}
+
+resource "azurerm_role_assignment" "aro_vnet_contributor" {
+  scope                = module.networking.vnet_id
+  role_definition_name = "Network Contributor"
+  principal_id         = data.azuread_service_principal.aro.object_id
+  principal_type       = "ServicePrincipal"
+}
+
+# OpenShift Module
+module "openshift" {
+  source = "../../modules/openshift"
+  
+  cluster_name      = local.cluster_name
+  openshift_version = var.openshift_version
+  pull_secret       = var.openshift_pull_secret
+  
+  # Network configuration
+  vnet_id          = module.networking.vnet_id
+  master_subnet_id = module.networking.subnet_ids[local.master_subnet_name]
+  worker_subnet_id = module.networking.subnet_ids[local.worker_subnet_name]
+  
+  # VM configuration
+  master_vm_size         = var.master_vm_size
+  worker_vm_size         = var.worker_vm_size
+  worker_node_count      = var.worker_node_count
+  
+  depends_on = [
+    azurerm_role_assignment.aro_vnet_contributor,
+    azurerm_role_assignment.aro_rg_contributor
+  ]
+}
+```
+
+### Outputs Configuration
+```hcl
+output "openshift_console_url" {
+  value = module.openshift.console_url
+}
+
+output "openshift_api_server_url" {
+  value = module.openshift.api_server_url
+}
+
+output "openshift_console_password" {
+  value     = module.openshift.console_password
+  sensitive = true
+}
 ```
 
 ## 🔍 Troubleshooting
 
-### Pods Not Starting
+### Failed Cluster Deployment
 ```bash
-# Check pod status
-oc get pods -n cloudlens
-oc describe pod <pod-name> -n cloudlens
+# Check cluster status
+az aro show --name ${PROJECT_NAME}-aro-prod --resource-group ${PROJECT_NAME}-prod-rg
 
-# Check events
-oc get events -n cloudlens --sort-by='.lastTimestamp'
+# Check detailed error
+az aro show --name ${PROJECT_NAME}-aro-prod --resource-group ${PROJECT_NAME}-prod-rg \
+  --query 'properties.provisioningStateMessage' -o tsv
 
-# Common fix - grant SCC permissions
-oc adm policy add-scc-to-user anyuid -z nginx-cloudlens -n cloudlens
+# Delete failed cluster and retry
+az aro delete --name ${PROJECT_NAME}-aro-prod --resource-group ${PROJECT_NAME}-prod-rg --yes
+terraform apply
 ```
 
-### 400 Bad Request Error
+### Service Principal Issues
 ```bash
-# Check route configuration
-oc get route nginx-cloudlens -n cloudlens -o yaml
+# List service principal
+az ad sp list --display-name "${PROJECT_NAME}-sp" --query "[0]"
 
-# Ensure targetPort is 8080, not 8443
-# Ensure insecureEdgeTerminationPolicy is Allow, not Redirect
+# Check role assignments
+az role assignment list --assignee <SP_OBJECT_ID> --output table
+
+# Recreate if needed
+terraform destroy -target=module.service_principal
+terraform apply -target=module.service_principal
 ```
 
-### Namespace Issues
+### Network Issues
 ```bash
-# If namespace exists with wrong annotations
-oc delete namespace cloudlens
-helm install nginx-cloudlens . --create-namespace --namespace cloudlens
+# Verify subnets
+az network vnet subnet list --resource-group ${PROJECT_NAME}-prod-rg --vnet-name ${PROJECT_NAME}-vnet -o table
+
+# Check NSG rules
+az network nsg rule list --resource-group ${PROJECT_NAME}-prod-rg --nsg-name ${PROJECT_NAME}-nsg -o table
 ```
 
-### Security Context Errors
+### Quota Issues
 ```bash
-# Error: "must be in the ranges: [1000770000, 1000779999]"
-# Solution:
-oc adm policy add-scc-to-user anyuid -z nginx-cloudlens -n cloudlens
-oc rollout restart daemonset -n cloudlens
+# Check all quotas
+az vm list-usage --location "westus2" -o table
+
+# Request increase
+# Go to: Portal → Subscriptions → Usage + quotas
 ```
 
-## 🎨 Customization
+## 🚀 Post-Deployment
 
-### Change Colors
-Edit `templates/configmap.yaml`:
-```css
-/* Purple gradient background */
-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+### 1. Access OpenShift Console
+```bash
+# Get console URL and credentials
+echo "Console URL: $(terraform output -raw openshift_console_url)"
+echo "Username: kubeadmin"
+echo "Password: $(terraform output -raw openshift_console_password)"
 
-/* Rainbow text animation */
-background: linear-gradient(45deg, #f093fb 0%, #f5576c 25%, #ffa502 50%, #32ff7e 75%, #7bed9f 100%);
+# Open console
+open $(terraform output -raw openshift_console_url)
 ```
 
-### Change Welcome Message
-In `templates/configmap.yaml`, find:
-```html
-<h1 class="welcome-text">Welcome to Keysight OpenShift Cluster</h1>
+### 2. Configure kubectl/oc
+```bash
+# Login via CLI
+oc login $(terraform output -raw openshift_api_server_url) \
+  -u kubeadmin \
+  -p $(terraform output -raw openshift_console_password)
+
+# Verify nodes
+oc get nodes
+
+# Check cluster version
+oc get clusterversion
 ```
 
-### Scale Pods Per Node
-In `values.yaml`:
-```yaml
-deployment:
-  podsPerNode: 5  # Change from 3 to 5 pods per node
+### 3. Configure Container Registry
+```bash
+# Get ACR credentials
+ACR_NAME=$(terraform output -raw registry_login_server | cut -d'.' -f1)
+ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query passwords[0].value -o tsv)
+
+# Create secret in OpenShift
+oc create secret docker-registry acr-secret \
+  --docker-server=$(terraform output -raw registry_login_server) \
+  --docker-username=$ACR_NAME \
+  --docker-password=$ACR_PASSWORD
 ```
 
-## 🔒 Security Considerations
+### 4. Deploy Sample Application
+```bash
+# Create new project
+oc new-project demo
 
-### Security Context Constraints (SCC)
-- Uses `anyuid` SCC to allow custom UIDs
-- Runs as non-root user
-- Drops unnecessary capabilities
-- Uses read-only root filesystem where possible
+# Deploy sample app
+oc new-app httpd~https://github.com/sclorg/httpd-ex
 
-### Network Policies
-- Restricts ingress to OpenShift router
-- Allows egress for DNS and HTTPS
-- Pod-to-pod communication within namespace
+# Expose route
+oc expose svc/httpd-ex
 
-### TLS Configuration
-- Self-signed certificates generated automatically
-- Edge termination at the route level
-- Supports both HTTP and HTTPS independently
+# Get route
+oc get route
+```
 
 ## 🧹 Cleanup
 
 ```bash
-# Uninstall the Helm release
-helm uninstall nginx-cloudlens -n cloudlens
+# Delete OpenShift cluster (takes 10-15 minutes)
+terraform destroy -target=module.openshift -auto-approve
 
-# Delete the namespace
-oc delete namespace cloudlens
+# Delete all resources
+terraform destroy -auto-approve
 
-# Remove SCC permissions (if granted)
-oc adm policy remove-scc-from-user anyuid -z nginx-cloudlens -n cloudlens
+# Verify cleanup
+az resource list --resource-group ${PROJECT_NAME}-prod-rg -o table
 ```
 
-## 📊 Monitoring
+## 💰 Cost Optimization
 
-Access Prometheus metrics:
-```bash
-# Port-forward to a pod
-oc port-forward -n cloudlens pod/$(oc get pod -n cloudlens -o name | head -1 | cut -d/ -f2) 9113:9113
+### Estimated Monthly Costs (USD)
+- Master Nodes (3x D8s_v3): ~$1,050
+- Worker Nodes (3x D4s_v3): ~$525  
+- ARO Service Fee: ~$600
+- Supporting Services: ~$200
+- **Total: ~$2,375/month**
 
-# Access metrics
-curl http://localhost:9113/metrics
-```
+### Cost Saving Tips
+1. Use smaller VM sizes for dev/test
+2. Scale worker nodes based on workload
+3. Stop cluster when not in use (not recommended for production)
+4. Use Azure Reserved Instances for long-term deployments
 
-## 🤝 Contributing
+## 🔒 Security Best Practices
+
+1. **Network Security**
+   - Private master/worker subnets
+   - NSGs with strict rules
+   - Service endpoints for Azure services
+
+2. **Access Control**
+   - API server IP whitelisting
+   - Azure AD integration
+   - RBAC policies
+
+3. **Secrets Management**
+   - Store pull secret in Key Vault
+   - Use managed identities where possible
+   - Rotate service principal credentials
+
+4. **Monitoring**
+   - Enable Azure Monitor for containers
+   - Configure Log Analytics
+   - Set up alerts for critical events
+
+## 📚 Additional Resources
+
+- [Azure Red Hat OpenShift Documentation](https://docs.microsoft.com/en-us/azure/openshift/)
+- [OpenShift Documentation](https://docs.openshift.com/)
+- [Terraform AzureRM Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
+- [ARO Support](https://access.redhat.com/products/azure-red-hat-openshift)
+
+## 🤝 Support
+
+- **Azure Support**: Create support ticket in Azure Portal
+- **Red Hat Support**: Access via Red Hat Customer Portal
+- **Community**: [OpenShift Commons](https://commons.openshift.org/)
+
+## 📧 Contributing
 
 1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
-This project is licensed under the MIT License.
-
-## 🙏 Acknowledgments
-
-- Keysight Technologies for the OpenShift cluster
-- CloudLens team for the project requirements
-- OpenShift community for security best practices
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-**Created with ❤️ by the CloudLens Team**
+**Deployed with ❤️ using Terraform and Azure**
+
+## 🔄 Variables Reference
+
+When deploying this infrastructure, make sure to replace the following variables:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `${PROJECT_NAME}` | Your project/company name | `mycompany` |
+| `${SUBSCRIPTION_ID}` | Your Azure subscription ID | `12345678-1234-1234-1234-123456789012` |
+| `${AZURE_REGION}` | Your Azure region | `westus2` |
+| `${RESOURCE_GROUP}` | Your resource group name | `mycompany-prod-rg` |
+| `${VNET_NAME}` | Your virtual network name | `mycompany-vnet` |
+| `${CLUSTER_NAME}` | Your OpenShift cluster name | `mycompany-aro-prod` |
+| `YOUR_PUBLIC_IP` | Your public IP for access | `203.0.113.1` |
+| `YOUR_USERNAME` | Your GitHub username | `yourusername` |
