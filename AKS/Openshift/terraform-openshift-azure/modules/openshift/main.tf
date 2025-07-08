@@ -20,8 +20,6 @@ resource "azurerm_redhat_openshift_cluster" "main" {
     version      = var.openshift_version
     pull_secret  = var.pull_secret
     
-    # Resource group for cluster resources (managed by ARO)
-    resource_group_id = "/subscriptions/${data.azurerm_subscription.current.subscription_id}/resourceGroups/${var.cluster_name}-cluster-rg"
   }
   
   network_profile {
