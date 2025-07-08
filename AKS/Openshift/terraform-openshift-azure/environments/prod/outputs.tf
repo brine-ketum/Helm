@@ -30,7 +30,7 @@ output "subnet_ids" {
 # OpenShift Cluster Outputs
 output "cluster_name" {
   description = "The name of the OpenShift cluster"
-  value       = module.openshift.cluster_name
+  value       = local.cluster_name
 }
 
 output "cluster_id" {
@@ -94,25 +94,20 @@ output "storage_account_name" {
 
 # OpenShift CLI Commands
 output "openshift_login_command" {
-  description = "Command to login to OpenShift"
-  value       = "oc login ${module.openshift.api_server_url} -u ${module.openshift.console_username} -p <password>"
+  description = "Command to login to OpenShift (password stored in Key Vault)"
+  value       = "oc login ${module.openshift.api_server_url} -u ${module.openshift.console_username} -p $(az keyvault secret show --vault-name ${azurerm_key_vault.main.name} --name ${local.cluster_name}-password --query value -o tsv)"
 }
 
 output "kubectl_config_command" {
   description = "Command to configure kubectl"
-  value       = "oc login ${module.openshift.api_server_url} && oc config view --raw > ~/.kube/config"
+  value       = "oc login ${module.openshift.api_server_url} -u ${module.openshift.console_username} -p $(az keyvault secret show --vault-name ${azurerm_key_vault.main.name} --name ${local.cluster_name}-password --query value -o tsv) && oc config view --raw > ~/.kube/config"
 }
 
 # Service Principal Information
 output "service_principal_id" {
   description = "The Application ID of the service principal"
   value       = local.service_principal_client_id
-}
-
-# DNS Information
-output "dns_zone_name_servers" {
-  description = "Name servers for the DNS zone (if created)"
-  value       = var.create_dns_zone ? azurerm_dns_zone.main[0].name_servers : []
+  sensitive   = true
 }
 
 # Access Information
