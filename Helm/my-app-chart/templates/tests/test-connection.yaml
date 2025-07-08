@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "my-app-chart.fullname" . }}-test-connection"
+  namespace: {{ include "my-app-chart.namespace" . }}
+  labels:
+    {{- include "my-app-chart.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox:1.35
+      command: ['wget']
+      args: ['{{ include "my-app-chart.fullname" . }}:{{ .Values.service.port }}']
+  restartPolicy: Never

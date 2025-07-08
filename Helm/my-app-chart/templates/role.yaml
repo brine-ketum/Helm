@@ -1,0 +1,11 @@
+{{- if and .Values.rbac.create (gt (len .Values.rbac.rules) 0) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "my-app-chart.fullname" . }}
+  namespace: {{ include "my-app-chart.namespace" . }}
+  labels:
+    {{- include "my-app-chart.labels" . | nindent 4 }}
+rules:
+  {{- toYaml .Values.rbac.rules | nindent 2 }}
+{{- end }}
