@@ -576,4 +576,4 @@ az resource list --resource-group keysight-prod-rg -o table
 
 ---
 
-**Deployed with ❤️ using Terraform and Azure**
+**Deployed with using Terraform and Azure**
