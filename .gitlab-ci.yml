@@ -1,8 +1,0 @@
-stages:
-  - test
-
-test-aws-credentials:
-  stage: test
-  image: amazon/aws-cli:latest
-  script:
-    - aws sts get-caller-identity
